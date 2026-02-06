@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { useSearchParams } from 'react-router-dom'; // NEW IMPORT for URL History
 
-function DrugSearch({ externalQuery }) {
-  const [query, setQuery] = useState('');
+function DrugSearch() { // REMOVED externalQuery prop
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQuery = searchParams.get('q') || ''; // Read from URL
+
+  const [query, setQuery] = useState(urlQuery);
   const [selectedDrug, setSelectedDrug] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -10,13 +14,18 @@ function DrugSearch({ externalQuery }) {
   const [showDropdown, setShowDropdown] = useState(false);
   const wrapperRef = useRef(null); 
 
-  // --- 1. HANDLE EXTERNAL QUERY (From Browse List) ---
+  // --- 1. HANDLE URL QUERY (Fixes Back Button) ---
+  // When the URL changes (e.g. user clicks Back), this runs automatically
   useEffect(() => {
-    if (externalQuery) {
-      setQuery(externalQuery);
-      fetchDrugData(externalQuery);
+    if (urlQuery) {
+      setQuery(urlQuery);
+      fetchDrugData(urlQuery);
+    } else {
+      // If URL is empty (user went back to home), clear results
+      setQuery('');
+      setSelectedDrug(null);
     }
-  }, [externalQuery]);
+  }, [urlQuery]);
 
   // --- 2. AUTOCOMPLETE SUGGESTIONS ---
   useEffect(() => {
@@ -67,27 +76,32 @@ function DrugSearch({ externalQuery }) {
   // Handle Form Submit
   const handleSearch = (e) => {
     if (e) e.preventDefault(); 
-    fetchDrugData(query);
+    // UPDATE URL instead of just searching
+    // This pushes the search to the browser history
+    setSearchParams({ q: query }); 
   };
 
   const selectSuggestion = (suggestion) => {
     setQuery(suggestion);
     setShowDropdown(false);
-    fetchDrugData(suggestion);
+    // UPDATE URL
+    setSearchParams({ q: suggestion });
   };
 
   const addToCabinet = async (drug) => {
     try {
-      const warningText = Array.isArray(drug.warnings) ? drug.warnings.join('. ') : drug.warnings;
+      // CHANGED: We now send the FULL drug object as 'details'
+      // This allows us to show the full AI report in the Cabinet later
       await axios.post('http://localhost:5000/api/user/add', {
         brandName: drug.brandName,
         genericName: drug.genericName,
-        warnings: warningText,
-        rxcui: drug.rxcui,
-        pharmClass: drug.pharm_class
+        details: drug // <--- SAVING EVERYTHING HERE
       });
       alert(`Success! ${drug.brandName} added to your cabinet.`);
-    } catch (err) { alert("Could not save medicine."); }
+    } catch (err) { 
+      console.error(err);
+      alert("Could not save medicine. Make sure you are logged in or the backend is running."); 
+    }
   };
 
   // --- 4. SMART FORMATTER (AI Lists vs Raw Text) ---
@@ -108,16 +122,18 @@ function DrugSearch({ externalQuery }) {
     // B. If Raw Text (Fallback), clean with Regex
     let clean = content;
     
-    // Remove "SECTION" headers
+    // FIXED: Cleaned up Regex Warnings (Removed unnecessary backslashes)
     clean = clean.replace(/SECTION \d+:/gi, "").trim();
 
-    // Add newlines before headers like "1 INDICATIONS"
+    // Use [.] for literal dot instead of \. to be safe and clean
     clean = clean.replace(/(\b\d+\s+[A-Z\s]{3,})/g, "\n\n### $1\n");
     
-    // Add newlines before bullets and numbers
+    // Removed unnecessary escape characters: \( \) \.
     clean = clean.replace(/(\(\d+\))/g, "\n$1");
     clean = clean.replace(/(\d+\.)/g, "\n$1");
-    clean = clean.replace(/(\•|\-)\s/g, "\n• ");
+    
+    // Removed unnecessary escape characters: \• \-
+    clean = clean.replace(/(•|-)\s/g, "\n• ");
 
     const lines = clean.split('\n');
 
@@ -137,7 +153,7 @@ function DrugSearch({ externalQuery }) {
              return (
                <div key={i} style={{marginBottom: '5px', paddingLeft: '15px', display: 'flex'}}>
                  <span style={{marginRight: '8px', fontWeight:'bold'}}>•</span>
-                 <span>{s.replace(/^[•\d\.\(\)]+\s*/, '')}</span>
+                 <span>{s.replace(/^[•\d.()]+\s*/, '')}</span>
                </div>
              );
           }
@@ -170,7 +186,6 @@ function DrugSearch({ externalQuery }) {
           <form onSubmit={handleSearch} style={styles.searchBox}>
             <input 
               type="text" 
-              // ✅ FIXED: Changed placeholder text
               placeholder="Search for a medication..." 
               value={query}
               onChange={(e) => setQuery(e.target.value)}

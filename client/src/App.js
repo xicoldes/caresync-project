@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './App.css';
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'; // NEW IMPORTS
+import { Routes, Route, useNavigate } from 'react-router-dom'; // Removed useLocation
 
 // Components
 import DrugSearch from './components/DrugSearch';
@@ -12,14 +12,12 @@ import DrugBrowse from './components/DrugBrowse';
 
 function App() {
   const [medicines, setMedicines] = useState([]);
-  const [searchQuery, setSearchQuery] = useState(''); 
+  // Deleted obsolete searchQuery state here
   const [refreshKey, setRefreshKey] = useState(0); 
   const browseRef = useRef(null);
 
-  // NEW: React Router Hooks
   const navigate = useNavigate();
 
-  // Fetch medicines
   useEffect(() => {
     const fetchMedicines = async () => {
       try {
@@ -34,28 +32,26 @@ function App() {
 
   const handleLogoClick = (e) => {
     e.preventDefault();
-    setSearchQuery(''); 
     setRefreshKey(prev => prev + 1); 
-    navigate('/'); // Navigate to Home URL
+    navigate('/'); 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleAZClick = () => {
-    navigate('/'); // Go home first
+    navigate('/'); 
     setTimeout(() => {
       browseRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
   };
 
   const handleBrowseSelect = (drugName) => {
-    setSearchQuery(drugName);
-    navigate('/'); // Ensure we are on home to show search
+    // REPLACED: Instead of setting state, we push to the URL history
+    navigate(`/?q=${encodeURIComponent(drugName)}`); 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
     <div className="App">
-      {/* --- HEADER --- */}
       <header>
         <div className="header-top">
           <a href="/" className="logo-container" onClick={handleLogoClick}>
@@ -68,11 +64,9 @@ function App() {
           </div>
         </div>
 
-        {/* --- NAV BAR --- */}
         <nav className="main-nav">
           <ul>
             <li onClick={handleAZClick}>Drugs A-Z</li>
-            {/* Replace setView with navigate */}
             <li onClick={() => navigate('/cabinet')}>My Cabinet</li>
             <li onClick={() => navigate('/tips')}>Symptom Checker</li>
             <li onClick={() => navigate('/interactions')}>Safety Checks</li>
@@ -80,17 +74,15 @@ function App() {
         </nav>
       </header>
 
-      {/* --- ROUTES (This replaces the View State) --- */}
       <Routes>
-        
-        {/* HOME PAGE */}
         <Route path="/" element={
           <>
             <section className="hero-section">
               <h1 className="hero-title">Know more. Be sure.</h1>
               <p className="hero-subtitle">Simplifying healthcare. One search at a time.</p>
               <div className="hero-search-wrapper">
-                <DrugSearch key={refreshKey} externalQuery={searchQuery} />
+                {/* REMOVED: externalQuery prop is no longer needed, it reads from URL now */}
+                <DrugSearch key={refreshKey} />
               </div>
             </section>
 
@@ -115,7 +107,6 @@ function App() {
           </>
         } />
 
-        {/* SUB PAGES */}
         <Route path="/cabinet" element={
           <div style={{padding: '20px'}}>
              <MyCabinet />
@@ -136,7 +127,6 @@ function App() {
              <button onClick={() => navigate('/')} style={backButtonStyle}>← Back to Home</button>
           </div>
         } />
-
       </Routes>
     </div>
   );

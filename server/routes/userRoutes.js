@@ -1,55 +1,57 @@
 const express = require('express');
 const router = express.Router();
-const User = require('../models/User');
+const mongoose = require('mongoose');
 
-// @route   POST /api/user/add
-// @desc    Add a medicine to the user's cabinet
-router.post('/add', async (req, res) => {
-  // 1. Accept new fields (rxcui, pharmClass) from Frontend
-  const { brandName, genericName, warnings, rxcui, pharmClass } = req.body;
+// Define a simple Schema inline (or import it if you have a model file)
+// This Schema now includes 'details' to store the full AI report
+const CabinetSchema = new mongoose.Schema({
+  brandName: String,
+  genericName: String,
+  details: Object, // Stores the full purpose, usage, warnings, etc.
+  createdAt: { type: Date, default: Date.now }
+});
 
+const CabinetItem = mongoose.model('CabinetItem', CabinetSchema);
+
+// --- GET ALL MEDICINES ---
+router.get('/medicines', async (req, res) => {
   try {
-    // 2. Find the Demo User (or create one if missing)
-    let user = await User.findOne();
-    if (!user) {
-      user = await User.create({ name: "Demo Student", savedMedicines: [] });
-    }
-
-    // 3. Check if already saved (prevent duplicates)
-    const exists = user.savedMedicines.find(m => m.brandName === brandName);
-    if (exists) {
-      return res.status(400).json({ message: "Medicine already in cabinet" });
-    }
-
-    // 4. Add to list and save (Now includes the new rich data)
-    user.savedMedicines.push({ 
-      brandName, 
-      genericName, 
-      warnings,
-      rxcui,       // Saved!
-      pharmClass   // Saved!
-    });
-    
-    await user.save();
-
-    res.json(user.savedMedicines); // Return the updated list
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server Error" });
+    const items = await CabinetItem.find().sort({ createdAt: -1 });
+    res.json(items);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-// @route   GET /api/user/cabinet
-// @desc    Get my saved medicines
-router.get('/cabinet', async (req, res) => {
+// --- ADD MEDICINE ---
+router.post('/add', async (req, res) => {
   try {
-    let user = await User.findOne();
-    if (!user) {
-        user = await User.create({ name: "Demo Student", savedMedicines: [] });
-    }
-    res.json(user.savedMedicines);
-  } catch (error) {
-    res.status(500).json({ message: "Server Error" });
+    const { brandName, genericName, details } = req.body;
+    
+    // Check if already exists
+    const existing = await CabinetItem.findOne({ brandName });
+    if (existing) return res.status(400).json({ message: "Item already in cabinet" });
+
+    const newItem = new CabinetItem({
+      brandName,
+      genericName,
+      details // Save the full object
+    });
+    
+    await newItem.save();
+    res.json(newItem);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- REMOVE MEDICINE ---
+router.delete('/remove/:id', async (req, res) => {
+  try {
+    await CabinetItem.findByIdAndDelete(req.params.id);
+    res.json({ message: "Deleted" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
