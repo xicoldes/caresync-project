@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './App.css';
-import { Routes, Route, useNavigate } from 'react-router-dom'; // Removed useLocation
+import { Routes, Route, useNavigate } from 'react-router-dom';
 
 // Components
 import DrugSearch from './components/DrugSearch';
@@ -12,10 +12,8 @@ import DrugBrowse from './components/DrugBrowse';
 
 function App() {
   const [medicines, setMedicines] = useState([]);
-  // Deleted obsolete searchQuery state here
   const [refreshKey, setRefreshKey] = useState(0); 
   const browseRef = useRef(null);
-
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -27,8 +25,6 @@ function App() {
     };
     fetchMedicines();
   }, []);
-
-  // --- HANDLERS ---
 
   const handleLogoClick = (e) => {
     e.preventDefault();
@@ -45,7 +41,6 @@ function App() {
   };
 
   const handleBrowseSelect = (drugName) => {
-    // REPLACED: Instead of setting state, we push to the URL history
     navigate(`/?q=${encodeURIComponent(drugName)}`); 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -67,7 +62,8 @@ function App() {
         <nav className="main-nav">
           <ul>
             <li onClick={handleAZClick}>Drugs A-Z</li>
-            <li onClick={() => navigate('/cabinet')}>My Cabinet</li>
+            {/* RENAME: Navigation Link */}
+            <li onClick={() => navigate('/cabinet')}>Saved Medicines</li>
             <li onClick={() => navigate('/tips')}>Symptom Checker</li>
             <li onClick={() => navigate('/interactions')}>Safety Checks</li>
           </ul>
@@ -81,15 +77,15 @@ function App() {
               <h1 className="hero-title">Know more. Be sure.</h1>
               <p className="hero-subtitle">Simplifying healthcare. One search at a time.</p>
               <div className="hero-search-wrapper">
-                {/* REMOVED: externalQuery prop is no longer needed, it reads from URL now */}
                 <DrugSearch key={refreshKey} />
               </div>
             </section>
 
             <section className="icon-grid">
+              {/* RENAME: Icon Grid Title */}
               <div className="feature-icon-card" onClick={() => navigate('/cabinet')}>
                 <div className="circle-icon">💊</div>
-                <div className="feature-title">My Medicine Cabinet</div>
+                <div className="feature-title">Saved Medicines</div>
               </div>
               <div className="feature-icon-card" onClick={() => navigate('/tips')}>
                 <div className="circle-icon">🩺</div>

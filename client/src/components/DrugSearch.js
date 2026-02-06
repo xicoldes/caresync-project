@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { useSearchParams } from 'react-router-dom'; // NEW IMPORT for URL History
+import { useSearchParams } from 'react-router-dom';
 
-function DrugSearch() { // REMOVED externalQuery prop
+function DrugSearch() { 
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlQuery = searchParams.get('q') || ''; // Read from URL
+  const urlQuery = searchParams.get('q') || ''; 
 
   const [query, setQuery] = useState(urlQuery);
   const [selectedDrug, setSelectedDrug] = useState(null);
@@ -14,20 +14,16 @@ function DrugSearch() { // REMOVED externalQuery prop
   const [showDropdown, setShowDropdown] = useState(false);
   const wrapperRef = useRef(null); 
 
-  // --- 1. HANDLE URL QUERY (Fixes Back Button) ---
-  // When the URL changes (e.g. user clicks Back), this runs automatically
   useEffect(() => {
     if (urlQuery) {
       setQuery(urlQuery);
       fetchDrugData(urlQuery);
     } else {
-      // If URL is empty (user went back to home), clear results
       setQuery('');
       setSelectedDrug(null);
     }
   }, [urlQuery]);
 
-  // --- 2. AUTOCOMPLETE SUGGESTIONS ---
   useEffect(() => {
     const fetchSuggestions = async () => {
       if (query.length < 2) { setSuggestions([]); return; }
@@ -41,7 +37,6 @@ function DrugSearch() { // REMOVED externalQuery prop
     return () => clearTimeout(delayDebounceFn);
   }, [query]);
 
-  // Click Outside to close dropdown
   useEffect(() => {
     function handleClickOutside(event) {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
@@ -52,7 +47,6 @@ function DrugSearch() { // REMOVED externalQuery prop
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [wrapperRef]);
 
-  // --- 3. CORE SEARCH FUNCTION ---
   const fetchDrugData = async (searchTerm) => {
     if (!searchTerm) return;
     setLoading(true);
@@ -73,42 +67,38 @@ function DrugSearch() { // REMOVED externalQuery prop
     setLoading(false);
   };
 
-  // Handle Form Submit
   const handleSearch = (e) => {
     if (e) e.preventDefault(); 
-    // UPDATE URL instead of just searching
-    // This pushes the search to the browser history
     setSearchParams({ q: query }); 
   };
 
   const selectSuggestion = (suggestion) => {
     setQuery(suggestion);
     setShowDropdown(false);
-    // UPDATE URL
     setSearchParams({ q: suggestion });
   };
 
+  // --- UPDATED SAVE FUNCTION ---
   const addToCabinet = async (drug) => {
     try {
-      // CHANGED: We now send the FULL drug object as 'details'
-      // This allows us to show the full AI report in the Cabinet later
       await axios.post('http://localhost:5000/api/user/add', {
         brandName: drug.brandName,
         genericName: drug.genericName,
-        details: drug // <--- SAVING EVERYTHING HERE
+        details: drug 
       });
-      alert(`Success! ${drug.brandName} added to your cabinet.`);
+      // Updated Success Message
+      alert(`Success! ${drug.brandName} added to your Saved Medicines.`);
     } catch (err) { 
       console.error(err);
-      alert("Could not save medicine. Make sure you are logged in or the backend is running."); 
+      // ✅ IMPROVED ERROR: Shows the actual message from the backend
+      // This will likely say "Item already in cabinet" if you saved it before
+      const message = err.response?.data?.message || "Could not save medicine. Check backend connection.";
+      alert(`Error: ${message}`); 
     }
   };
 
-  // --- 4. SMART FORMATTER (AI Lists vs Raw Text) ---
   const formatContent = (content) => {
     if (!content) return "Information not available.";
-    
-    // A. If AI output (Array), render clean list
     if (Array.isArray(content)) {
       return (
         <ul style={{paddingLeft: '20px', margin: 0, color: '#333'}}>
@@ -118,37 +108,21 @@ function DrugSearch() { // REMOVED externalQuery prop
         </ul>
       );
     }
-
-    // B. If Raw Text (Fallback), clean with Regex
     let clean = content;
-    
-    // FIXED: Cleaned up Regex Warnings (Removed unnecessary backslashes)
     clean = clean.replace(/SECTION \d+:/gi, "").trim();
-
-    // Use [.] for literal dot instead of \. to be safe and clean
     clean = clean.replace(/(\b\d+\s+[A-Z\s]{3,})/g, "\n\n### $1\n");
-    
-    // Removed unnecessary escape characters: \( \) \.
     clean = clean.replace(/(\(\d+\))/g, "\n$1");
     clean = clean.replace(/(\d+\.)/g, "\n$1");
-    
-    // Removed unnecessary escape characters: \• \-
     clean = clean.replace(/(•|-)\s/g, "\n• ");
-
     const lines = clean.split('\n');
-
     return (
       <div style={{lineHeight: '1.6', color: '#333'}}>
         {lines.map((line, i) => {
           let s = line.trim();
           if (s.length < 2) return null;
-
-          // Render Headers
           if (s.startsWith("###")) {
              return <h4 key={i} style={{color: '#104c97', marginTop: '15px', marginBottom: '5px', borderBottom:'1px solid #eee'}}>{s.replace('###', '')}</h4>;
           }
-
-          // Render List Items
           if (s.match(/^(\(\d+\)|\d+\.|•)/)) {
              return (
                <div key={i} style={{marginBottom: '5px', paddingLeft: '15px', display: 'flex'}}>
@@ -157,14 +131,12 @@ function DrugSearch() { // REMOVED externalQuery prop
                </div>
              );
           }
-
           return <p key={i} style={{marginBottom: '10px'}}>{s}</p>;
         })}
       </div>
     );
   };
 
-  // --- CARD COMPONENT ---
   const DrugSection = ({ id, title, emoji, content }) => {
     if (!content || content === "No info") return null;
     return (
@@ -180,7 +152,6 @@ function DrugSearch() { // REMOVED externalQuery prop
 
   return (
     <div style={styles.container}>
-      {/* SEARCH BAR */}
       <div style={{marginBottom: '30px'}}>
         <div style={{position: 'relative'}} ref={wrapperRef}>
           <form onSubmit={handleSearch} style={styles.searchBox}>
@@ -211,7 +182,6 @@ function DrugSearch() { // REMOVED externalQuery prop
         {error && <div style={styles.error}>{error}</div>}
       </div>
 
-      {/* DRUG CONTENT */}
       {selectedDrug && (
         <div style={styles.drugContainer}>
           
@@ -226,7 +196,6 @@ function DrugSearch() { // REMOVED externalQuery prop
                 <p><strong>Drug class:</strong> {selectedDrug.pharm_class}</p>
               )}
             </div>
-
             <div style={styles.navBar}>
                 <a href="#overview" style={styles.navLink}>Overview</a> <span style={styles.sep}>|</span>
                 <a href="#side-effects" style={styles.navLink}>Side effects</a> <span style={styles.sep}>|</span>
@@ -236,9 +205,9 @@ function DrugSearch() { // REMOVED externalQuery prop
             </div>
           </div>
 
-          <button onClick={() => addToCabinet(selectedDrug)} style={styles.addButton}>+ Save to My Cabinet</button>
+          {/* RENAME: Updated button text */}
+          <button onClick={() => addToCabinet(selectedDrug)} style={styles.addButton}>+ Save to List</button>
 
-          {/* SECTIONS */}
           <DrugSection id="overview" emoji="💊" title={`What is ${selectedDrug.brandName}?`} content={selectedDrug.purpose} />
           <DrugSection id="dosage" emoji="📋" title="How to take" content={selectedDrug.dosage} />
           <DrugSection id="side-effects" emoji="🤢" title="Side Effects" content={selectedDrug.side_effects} />
@@ -249,9 +218,7 @@ function DrugSearch() { // REMOVED externalQuery prop
                <div style={styles.cardContent}>{formatContent(selectedDrug.warnings)}</div>
             </div>
           )}
-
           <DrugSection id="interactions" emoji="⚡" title="Interactions" content={selectedDrug.interactions} />
-
         </div>
       )}
     </div>
