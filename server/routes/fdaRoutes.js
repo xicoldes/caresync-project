@@ -5,7 +5,6 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const CachedDrug = require('../models/CachedDrug'); 
 require('dotenv').config();
 
-// --- 1. SETUP GOOGLE AI ---
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
 // --- LOCAL SINGAPORE DRUG DATABASE ---
@@ -31,8 +30,7 @@ const LOCAL_DRUGS = [
   // ... (Add your other local drugs here)
 ];
 
-// --- 🧠 NEW HELPER: RESOLVE BRAND TO GENERIC ---
-// This fixes the "Panadol" issue. If FDA doesn't know the brand, we ask AI what the generic is.
+// --- 🧠 NEW HELPER 1: RESOLVE BRAND TO GENERIC ---
 async function getGenericNameWithAI(brandName) {
   const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
   const prompt = `
@@ -42,12 +40,46 @@ async function getGenericNameWithAI(brandName) {
   `;
   try {
     const result = await model.generateContent(prompt);
-    const text = result.response.text().trim().replace(/\.$/, ''); // Remove trailing dot
+    const text = result.response.text().trim().replace(/\.$/, ''); 
     console.log(`🧠 AI Translation: "${brandName}" -> "${text}"`);
     return text;
   } catch (error) {
     console.error("❌ Brand Resolution Error:", error.message);
     return null;
+  }
+}
+
+// --- 🧠 NEW HELPER 2: PICK BEST MATCH (Fixes Zyrtec Issue) ---
+// This function gives the AI the list of FDA results and asks it to pick the "standard" one.
+async function findBestMatchWithAI(userQuery, fdaResults) {
+  if (!fdaResults || fdaResults.length === 0) return null;
+  
+  // Create a simplified list for the AI to read (Brand + Generic)
+  const simplifiedList = fdaResults.map((item, index) => {
+     const brand = item.openfda?.brand_name ? item.openfda.brand_name[0] : "Unknown";
+     const generic = item.openfda?.generic_name ? item.openfda.generic_name[0] : "Unknown";
+     return `${index}: Brand="${brand}", Generic="${generic}"`;
+  }).join("\n");
+
+  const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+  const prompt = `
+    User searched for: "${userQuery}"
+    I have these results from the FDA:
+    ${simplifiedList}
+
+    Which index number represents the MAIN, STANDARD, ADULT version of the drug? 
+    Avoid "Children's" or "pm" versions unless the user asked for them.
+    Return ONLY the index number (e.g. "0" or "2"). If none match well, return "0".
+  `;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const index = parseInt(result.response.text().trim());
+    console.log(`🧠 AI Selected Index ${index} for query "${userQuery}"`);
+    return isNaN(index) ? fdaResults[0] : fdaResults[index];
+  } catch (error) {
+    console.error("❌ Match Selection Error:", error.message);
+    return fdaResults[0]; // Fallback to first result
   }
 }
 
@@ -102,12 +134,12 @@ const toTitleCase = (str) => {
   return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
 };
 
-// --- 🧹 NEW ROUTE TO CLEAR CACHE ---
+// --- 🧹 CLEAR CACHE ROUTE ---
 router.post('/clear-cache', async (req, res) => {
     try {
         await CachedDrug.deleteMany({});
         console.log("🧹 Cache Cleared!");
-        res.json({ message: "Cache cleared successfully. Next search will use new AI prompt." });
+        res.json({ message: "Cache cleared successfully." });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -121,15 +153,15 @@ router.get('/search', async (req, res) => {
 
   const cleanQuery = query.toLowerCase().trim();
 
-  // --- ⚡ STEP 1: CHECK MONGODB CACHE FIRST ⚡ ---
+  // --- ⚡ STEP 1: CHECK CACHE ---
   try {
     const cachedResult = await CachedDrug.findOne({ searchQuery: cleanQuery });
     if (cachedResult) {
-      console.log(`⚡ Serving "${cleanQuery}" from Cache (No AI needed)`);
+      console.log(`⚡ Serving "${cleanQuery}" from Cache`);
       return res.json([cachedResult.data]);
     }
   } catch (err) {
-    console.error("Cache Check Error (Ignoring):", err.message);
+    console.error("Cache Check Error:", err.message);
   }
 
   // --- STEP 2: CHECK LOCAL DB ---
@@ -139,45 +171,38 @@ router.get('/search', async (req, res) => {
   try {
     // A. Initial Search
     let fdaUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.brand_name:"${query}"+openfda.generic_name:"${query}"&limit=5`;
-    let response = await axios.get(fdaUrl).catch(() => null); // Catch error if 404
+    let response = await axios.get(fdaUrl).catch(() => null); 
     
     let fdaItem = null;
     let resolvedGenericName = null;
 
-    // B. If Direct Search Failed OR returned bad results (like Panadol PM for Panadol)
-    // We check if we found an EXACT match.
-    let exactMatch = response?.data?.results?.find(item => 
-       item.openfda?.brand_name?.some(b => b.toLowerCase() === cleanQuery) ||
-       item.openfda?.generic_name?.some(g => g.toLowerCase() === cleanQuery)
-    );
-
-    // C. 🧠 SMART FIX: If no exact match, ask AI for the generic name
-    if (!exactMatch) {
+    // B. Check for results
+    if (response?.data?.results && response.data.results.length > 0) {
+        // 🧠 CALL THE NEW AI HELPER HERE
+        console.log("🔍 Found multiple results. Asking AI to pick the best one...");
+        fdaItem = await findBestMatchWithAI(cleanQuery, response.data.results);
+    } 
+    
+    // C. If still no good match, try translating brand -> generic
+    if (!fdaItem) {
        console.log("🤔 Direct match not found. Asking AI to translate brand...");
        resolvedGenericName = await getGenericNameWithAI(cleanQuery);
        
        if (resolvedGenericName) {
-         // Search AGAIN using the AI-provided generic name (e.g., "Acetaminophen")
          const genericUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.generic_name:"${resolvedGenericName}"&limit=5`;
          const genericResponse = await axios.get(genericUrl).catch(() => null);
          
          if (genericResponse && genericResponse.data.results) {
-            // Use the first result from the Generic search
-            fdaItem = genericResponse.data.results[0];
+            // Ask AI to pick best match from Generic results too
+            fdaItem = await findBestMatchWithAI(resolvedGenericName, genericResponse.data.results);
             console.log(`✅ Found FDA data using generic: ${resolvedGenericName}`);
          }
        }
-    } else {
-       fdaItem = exactMatch;
     }
 
-    // Use whatever we found, or fallback to first result if desperate
-    fdaItem = fdaItem || response?.data?.results?.[0];
-
-    if (!fdaItem) throw new Error("Drug not found in FDA or via AI resolution");
+    if (!fdaItem) throw new Error("Drug not found");
 
     const meta = fdaItem.openfda || {};
-    // Use the Resolved Generic Name if we found one, otherwise the API name
     const finalDrugName = resolvedGenericName ? toTitleCase(cleanQuery) : (meta.brand_name ? meta.brand_name[0] : meta.generic_name?.[0]);
     const finalGenericName = resolvedGenericName || (meta.generic_name ? toTitleCase(meta.generic_name[0]) : "Generic");
 
@@ -190,8 +215,6 @@ router.get('/search', async (req, res) => {
       reactions: fdaItem.adverse_reactions,
       interactions: fdaItem.drug_interactions
     });
-
-    if (aiData) console.log("✅ AI Success!");
 
     // Build Result
     const finalResult = {
@@ -219,7 +242,7 @@ router.get('/search', async (req, res) => {
       }
     }
 
-    // --- 💾 STEP 4: SAVE TO CACHE ---
+    // --- 💾 SAVE TO CACHE ---
     try {
       await new CachedDrug({ searchQuery: cleanQuery, data: finalResult }).save();
       console.log("💾 Saved to Cache");

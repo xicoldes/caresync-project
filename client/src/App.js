@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './App.css';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'; // NEW IMPORTS
 
 // Components
 import DrugSearch from './components/DrugSearch';
@@ -10,15 +11,13 @@ import InteractionChecker from './components/InteractionChecker';
 import DrugBrowse from './components/DrugBrowse';
 
 function App() {
-  const [view, setView] = useState('home'); 
   const [medicines, setMedicines] = useState([]);
   const [searchQuery, setSearchQuery] = useState(''); 
-  
-  // This 'key' is a trick to force React to reset the Search Component
   const [refreshKey, setRefreshKey] = useState(0); 
-
-  // Ref to scroll to the A-Z section
   const browseRef = useRef(null);
+
+  // NEW: React Router Hooks
+  const navigate = useNavigate();
 
   // Fetch medicines
   useEffect(() => {
@@ -33,28 +32,24 @@ function App() {
 
   // --- HANDLERS ---
 
-  // 1. Logo Click: Resets EVERYTHING (Clears search, goes home, scrolls top)
   const handleLogoClick = (e) => {
     e.preventDefault();
-    setView('home');
-    setSearchQuery(''); // Clear any active A-Z filter
-    setRefreshKey(prev => prev + 1); // Force DrugSearch to re-render (clear results)
+    setSearchQuery(''); 
+    setRefreshKey(prev => prev + 1); 
+    navigate('/'); // Navigate to Home URL
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 2. Drugs A-Z Click: Scrolls down to the Browse section
   const handleAZClick = () => {
-    setView('home');
-    // Wait for view to switch, then scroll
+    navigate('/'); // Go home first
     setTimeout(() => {
       browseRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
   };
 
-  // 3. Browse Select: When clicking a drug in the A-Z list
   const handleBrowseSelect = (drugName) => {
     setSearchQuery(drugName);
-    setView('home');
+    navigate('/'); // Ensure we are on home to show search
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -77,85 +72,79 @@ function App() {
         <nav className="main-nav">
           <ul>
             <li onClick={handleAZClick}>Drugs A-Z</li>
-            <li onClick={() => setView('cabinet')}>My Cabinet</li>
-            <li onClick={() => setView('tips')}>Symptom Checker</li>
-            <li onClick={() => setView('interactions')}>Safety Checks</li>
+            {/* Replace setView with navigate */}
+            <li onClick={() => navigate('/cabinet')}>My Cabinet</li>
+            <li onClick={() => navigate('/tips')}>Symptom Checker</li>
+            <li onClick={() => navigate('/interactions')}>Safety Checks</li>
           </ul>
         </nav>
       </header>
 
-      {/* --- DYNAMIC CONTENT --- */}
-      
-      {/* HOME VIEW */}
-      {view === 'home' && (
-        <>
-          <section className="hero-section">
-            <h1 className="hero-title">Know more. Be sure.</h1>
-            <p className="hero-subtitle">Simplifying healthcare. One search at a time.</p>
-            
-            <div className="hero-search-wrapper">
-              {/* key={refreshKey} ensures this component wipes clean when logo is clicked */}
-              <DrugSearch key={refreshKey} externalQuery={searchQuery} />
-            </div>
-          </section> 
+      {/* --- ROUTES (This replaces the View State) --- */}
+      <Routes>
+        
+        {/* HOME PAGE */}
+        <Route path="/" element={
+          <>
+            <section className="hero-section">
+              <h1 className="hero-title">Know more. Be sure.</h1>
+              <p className="hero-subtitle">Simplifying healthcare. One search at a time.</p>
+              <div className="hero-search-wrapper">
+                <DrugSearch key={refreshKey} externalQuery={searchQuery} />
+              </div>
+            </section>
 
-          <section className="icon-grid">
-            <div className="feature-icon-card" onClick={() => setView('cabinet')}>
-              <div className="circle-icon">💊</div>
-              <div className="feature-title">My Medicine Cabinet</div>
-            </div>
+            <section className="icon-grid">
+              <div className="feature-icon-card" onClick={() => navigate('/cabinet')}>
+                <div className="circle-icon">💊</div>
+                <div className="feature-title">My Medicine Cabinet</div>
+              </div>
+              <div className="feature-icon-card" onClick={() => navigate('/tips')}>
+                <div className="circle-icon">🩺</div>
+                <div className="feature-title">Health & Symptom Guide</div>
+              </div>
+              <div className="feature-icon-card" onClick={() => navigate('/interactions')}>
+                <div className="circle-icon">⚠️</div>
+                <div className="feature-title">Interaction Checker</div>
+              </div>
+            </section>
 
-            <div className="feature-icon-card" onClick={() => setView('tips')}>
-              <div className="circle-icon">🩺</div>
-              <div className="feature-title">Health & Symptom Guide</div>
+            <div ref={browseRef}>
+              <DrugBrowse onSelectDrug={handleBrowseSelect} />
             </div>
+          </>
+        } />
 
-            <div className="feature-icon-card" onClick={() => setView('interactions')}>
-              <div className="circle-icon">⚠️</div>
-              <div className="feature-title">Interaction Checker</div>
-            </div>
-          </section>
-
-          {/* Attach Ref here so we can scroll to it */}
-          <div ref={browseRef}>
-            <DrugBrowse onSelectDrug={handleBrowseSelect} />
+        {/* SUB PAGES */}
+        <Route path="/cabinet" element={
+          <div style={{padding: '20px'}}>
+             <MyCabinet />
+             <button onClick={() => navigate('/')} style={backButtonStyle}>← Back to Home</button>
           </div>
-        </>
-      )}
+        } />
 
-      {/* --- OTHER VIEWS --- */}
-      {view === 'cabinet' && (
-        <div style={{padding: '20px'}}>
-           <MyCabinet />
-           <button onClick={handleLogoClick} style={backButtonStyle}>← Back to Home</button>
-        </div>
-      )}
+        <Route path="/tips" element={
+          <div style={{padding: '20px'}}>
+             <HealthTips />
+             <button onClick={() => navigate('/')} style={backButtonStyle}>← Back to Home</button>
+          </div>
+        } />
 
-      {view === 'tips' && (
-        <div style={{padding: '20px'}}>
-           <HealthTips />
-           <button onClick={handleLogoClick} style={backButtonStyle}>← Back to Home</button>
-        </div>
-      )}
+        <Route path="/interactions" element={
+          <div style={{padding: '20px'}}>
+             <InteractionChecker medicines={medicines} />
+             <button onClick={() => navigate('/')} style={backButtonStyle}>← Back to Home</button>
+          </div>
+        } />
 
-      {view === 'interactions' && (
-        <div style={{padding: '20px'}}>
-           <InteractionChecker medicines={medicines} />
-           <button onClick={handleLogoClick} style={backButtonStyle}>← Back to Home</button>
-        </div>
-      )}
-
+      </Routes>
     </div>
   );
 }
 
 const backButtonStyle = {
-  marginTop: '20px', 
-  padding: '10px 20px', 
-  cursor: 'pointer',
-  backgroundColor: '#f0f0f0',
-  border: '1px solid #ccc',
-  borderRadius: '4px'
+  marginTop: '20px', padding: '10px 20px', cursor: 'pointer',
+  backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px'
 };
 
 export default App;
