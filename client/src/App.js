@@ -97,7 +97,7 @@ function App() {
               {/* key={refreshKey} ensures this component wipes clean when logo is clicked */}
               <DrugSearch key={refreshKey} externalQuery={searchQuery} />
             </div>
-          </section>
+          </section> 
 
           <section className="icon-grid">
             <div className="feature-icon-card" onClick={() => setView('cabinet')}>
