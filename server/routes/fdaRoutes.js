@@ -8,7 +8,6 @@ require('dotenv').config();
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
 // --- LOCAL SINGAPORE DRUG DATABASE ---
-// (Ensure Curam is here so it works even if FDA fails)
 const LOCAL_DRUGS = [
   {
     brandName: "Curam",
@@ -30,11 +29,10 @@ const LOCAL_DRUGS = [
   }
 ];
 
-// --- 🧠 HELPER 1: RESOLVE BRAND TO GENERIC (FIXED) ---
+// --- 🧠 HELPER 1: RESOLVE BRAND TO GENERIC ---
 async function getGenericNameWithAI(brandName) {
   const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
   
-  // UPDATED PROMPT: Asks for simpler names to match FDA database better
   const prompt = `
     What is the active generic ingredient for the drug brand "${brandName}"?
     Return the standard US FDA generic name.
@@ -56,7 +54,7 @@ async function getGenericNameWithAI(brandName) {
   }
 }
 
-// --- 🧠 HELPER 2: PICK BEST MATCH ---
+// --- 🧠 HELPER 2: PICK BEST MATCH (UPDATED) ---
 async function findBestMatchWithAI(userQuery, fdaResults) {
   if (!fdaResults || fdaResults.length === 0) return null;
   
@@ -67,14 +65,21 @@ async function findBestMatchWithAI(userQuery, fdaResults) {
   }).join("\n");
 
   const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+  
+  // UPDATED PROMPT: Explicitly prefers the shortest name (General) over specific variants
   const prompt = `
     User searched for: "${userQuery}"
     I have these results from the FDA:
     ${simplifiedList}
 
-    Which index number represents the MAIN, STANDARD, ADULT version of the drug? 
-    Avoid "Children's" or "pm" versions unless the user asked for them.
-    Return ONLY the index number (e.g. "0" or "2"). If none match well, return "0".
+    Task: Select the index of the MAIN, GENERAL version of the drug.
+    
+    Rules:
+    1. Prefer exact brand matches (e.g. "Zyrtec") over specific variants (e.g. "Zyrtec Allergy" or "Zyrtec-D") IF possible.
+    2. Avoid "Children's" versions unless the user asked for it.
+    3. If the user searched a generic name, pick the most standard brand representative.
+    
+    Return ONLY the index number (e.g. "0").
   `;
 
   try {
@@ -86,24 +91,31 @@ async function findBestMatchWithAI(userQuery, fdaResults) {
   }
 }
 
-// --- AI HELPER: SUMMARIZATION ---
+// --- AI HELPER: SUMMARIZATION (MAJOR UPDATE) ---
 async function simplifyWithAI(drugName, rawData) {
   const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
+  // UPDATED PROMPT: AI now generates the Display Name and Brand List
   const prompt = `
     You are an expert pharmacist providing a detailed consultation. 
-    Analyze the FDA data below for the drug "${drugName}" and provide a comprehensive, informative summary for a patient.
+    Analyze the FDA data below for the drug "${drugName}".
     
-    Provide specific, useful details.
+    Task 1: Identify the "Standard Display Name". 
+    (e.g., If the data says "Zyrtec Allergy" but the main drug is "Zyrtec", just return "Zyrtec").
+
+    Task 2: Provide a comprehensive patient summary.
     
-    Return strictly VALID JSON. No Markdown. No code blocks.
+    Return strictly VALID JSON.
     Structure:
     {
+      "standard_brand_name": "The cleanest, most general brand name for this drug (Title Case)",
+      "standard_generic_name": "The clean generic name",
+      "common_brands": ["Brand 1", "Brand 2", "Brand 3"],
       "purpose": "Detailed explanation of what this drug treats and how it works (2-3 sentences).",
-      "usage": ["Specific instruction 1 (e.g., take with food)", "Specific instruction 2 (e.g., dosage timing)", "What to do if missed dose"],
-      "side_effects": ["Common side effect 1", "Common side effect 2", "Serious side effect to watch for"],
-      "warnings": ["Critical warning 1 (e.g., pregnancy safety)", "Critical warning 2 (e.g., alcohol use)", "Who should NOT take this"],
-      "interactions": ["Drug class 1 to avoid", "Specific medication interaction", "Food/Supplement interaction"]
+      "usage": ["Specific instruction 1", "Specific instruction 2"],
+      "side_effects": ["Common side effect 1", "Common side effect 2", "Serious side effect"],
+      "warnings": ["Critical warning 1", "Critical warning 2"],
+      "interactions": ["Drug 1 to avoid", "Interaction 2"]
     }
 
     Data:
@@ -131,7 +143,6 @@ const getFDAText = (item, field) => {
   return null;
 };
 
-// --- HELPER: Title Case ---
 const toTitleCase = (str) => {
   if (!str) return "";
   return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
@@ -172,7 +183,7 @@ router.get('/search', async (req, res) => {
 
   // --- STEP 3: SEARCH FDA ---
   try {
-    let fdaUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.brand_name:"${query}"+openfda.generic_name:"${query}"&limit=5`;
+    let fdaUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.brand_name:"${query}"+openfda.generic_name:"${query}"&limit=10`; // Increased limit to find better matches
     let response = await axios.get(fdaUrl).catch(() => null); 
     
     let fdaItem = null;
@@ -189,7 +200,6 @@ router.get('/search', async (req, res) => {
        resolvedGenericName = await getGenericNameWithAI(cleanQuery);
        
        if (resolvedGenericName) {
-         // Search using the SIMPLER generic name from AI
          const genericUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.generic_name:"${resolvedGenericName}"&limit=5`;
          const genericResponse = await axios.get(genericUrl).catch(() => null);
          
@@ -203,11 +213,11 @@ router.get('/search', async (req, res) => {
     if (!fdaItem) throw new Error("Drug not found");
 
     const meta = fdaItem.openfda || {};
-    const finalDrugName = resolvedGenericName ? toTitleCase(cleanQuery) : (meta.brand_name ? meta.brand_name[0] : meta.generic_name?.[0]);
-    const finalGenericName = resolvedGenericName || (meta.generic_name ? toTitleCase(meta.generic_name[0]) : "Generic");
+    // Determine the name to send to AI for summarization
+    const nameForAI = resolvedGenericName ? toTitleCase(cleanQuery) : (meta.brand_name ? meta.brand_name[0] : meta.generic_name?.[0]);
 
-    console.log(`🤖 AI Summarizing: ${finalDrugName}...`);
-    const aiData = await simplifyWithAI(finalDrugName, {
+    console.log(`🤖 AI Summarizing: ${nameForAI}...`);
+    const aiData = await simplifyWithAI(nameForAI, {
       indications: fdaItem.indications_and_usage,
       warnings: fdaItem.warnings,
       dosage: fdaItem.dosage_and_administration,
@@ -215,11 +225,14 @@ router.get('/search', async (req, res) => {
       interactions: fdaItem.drug_interactions
     });
 
+    // --- REPLACED LOGIC: Use AI-determined names instead of raw FDA names ---
+    // Reason: FDA names like "ZYRTEC Allergy" are too specific. AI provides cleaner "Zyrtec".
+    
     const finalResult = {
       source: "US FDA",
-      brandName: toTitleCase(finalDrugName),
-      genericName: toTitleCase(finalGenericName),
-      brandNamesList: meta.brand_name ? meta.brand_name.slice(0, 5) : [], 
+      brandName: aiData?.standard_brand_name || toTitleCase(nameForAI), // Prefer AI's clean name
+      genericName: aiData?.standard_generic_name || toTitleCase(meta.generic_name?.[0] || "Generic"),
+      brandNamesList: aiData?.common_brands || (meta.brand_name ? meta.brand_name.slice(0, 5) : []), // Prefer AI's clean list
       pharm_class: meta.pharm_class_epc ? meta.pharm_class_epc[0] : "Unknown Class",
       rxcui: null, 
 
@@ -237,7 +250,6 @@ router.get('/search', async (req, res) => {
       }
     }
 
-    // Save to Cache
     try {
       await new CachedDrug({ searchQuery: cleanQuery, data: finalResult }).save();
       console.log("💾 Saved to Cache");
@@ -248,9 +260,7 @@ router.get('/search', async (req, res) => {
   } catch (error) {
     console.error("Search Error:", error.message);
     
-    // ✅ CRITICAL FIX: If FDA fails, return the Local Match if we have it!
     if (localMatch) {
-       console.log("⚠️ FDA Search failed, but found in Local Database. Returning Local data.");
        return res.json([{ ...localMatch, source: "SG Database (Offline)" }]);
     }
 
