@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 function MyCabinet() {
   const [medicines, setMedicines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDrug, setSelectedDrug] = useState(null);
+  const navigate = useNavigate();
 
   const fetchCabinet = async () => {
     try {
@@ -41,15 +43,20 @@ function MyCabinet() {
 
   return (
     <div style={styles.container}>
-      {/* RENAME: Header */}
-      <h1 style={styles.header}>💊 Saved Medicines</h1>
-      <p style={styles.subHeader}>Manage your saved medications and prescriptions.</p>
+      {/* MODERN BACK BUTTON */}
+      <button onClick={() => navigate('/')} style={styles.backButton}>
+        ← Back to Home
+      </button>
+
+      <div style={styles.headerBlock}>
+        <h1 style={styles.header}>💊 Saved Medicines</h1>
+        <p style={styles.subHeader}>Manage your saved medications and prescriptions.</p>
+      </div>
 
       {loading ? (
         <p>Loading...</p>
       ) : medicines.length === 0 ? (
         <div style={styles.emptyState}>
-          {/* RENAME: Empty State */}
           <h3>Your saved list is empty.</h3>
           <p>Go to "Drugs A-Z" or Search to add medicines here.</p>
         </div>
@@ -131,9 +138,16 @@ const Section = ({ title, content, warning }) => (
 );
 
 const styles = {
-  container: { maxWidth: '1000px', margin: '0 auto', fontFamily: 'Arial, sans-serif' },
-  header: { color: '#104c97', borderBottom: '2px solid #eee', paddingBottom: '15px' },
-  subHeader: { color: '#666', marginBottom: '30px' },
+  container: { maxWidth: '1000px', margin: '40px auto', padding: '0 20px', fontFamily: 'Arial, sans-serif' },
+  backButton: { 
+    background: 'none', border: 'none', color: '#666', 
+    fontSize: '0.95rem', cursor: 'pointer', marginBottom: '20px', 
+    padding: '8px 0', display: 'flex', alignItems: 'center', fontWeight: '500'
+  },
+  headerBlock: { borderBottom: '2px solid #eee', paddingBottom: '15px', marginBottom: '30px' },
+  header: { color: '#104c97', margin: '0 0 10px 0' },
+  subHeader: { color: '#666', margin: 0 },
+  
   emptyState: { textAlign: 'center', padding: '50px', backgroundColor: '#f9f9f9', borderRadius: '8px' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px' },
   card: { backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', border: '1px solid #eee', position: 'relative', display: 'flex', flexDirection: 'column' },
