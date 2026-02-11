@@ -6,7 +6,7 @@ import { Routes, Route, useNavigate } from 'react-router-dom';
 // Components
 import DrugSearch from './components/DrugSearch';
 import MyCabinet from './components/MyCabinet';
-import HealthTips from './components/HealthTips';
+// DELETED: import HealthTips from './components/HealthTips'; (Reason: Feature removed)
 import InteractionChecker from './components/InteractionChecker';
 import DrugBrowse from './components/DrugBrowse';
 
@@ -62,10 +62,10 @@ function App() {
         <nav className="main-nav">
           <ul>
             <li onClick={handleAZClick}>Drugs A-Z</li>
-            {/* RENAME: Navigation Link */}
             <li onClick={() => navigate('/cabinet')}>Saved Medicines</li>
-            <li onClick={() => navigate('/tips')}>Symptom Checker</li>
-            <li onClick={() => navigate('/interactions')}>Safety Checks</li>
+            {/* DELETED: Symptom Checker Link */}
+            {/* RENAMED: Safety Checks -> Drug Interaction Check */}
+            <li onClick={() => navigate('/interactions')}>Drug Interaction Check</li>
           </ul>
         </nav>
       </header>
@@ -82,18 +82,17 @@ function App() {
             </section>
 
             <section className="icon-grid">
-              {/* RENAME: Icon Grid Title */}
               <div className="feature-icon-card" onClick={() => navigate('/cabinet')}>
                 <div className="circle-icon">💊</div>
                 <div className="feature-title">Saved Medicines</div>
               </div>
-              <div className="feature-icon-card" onClick={() => navigate('/tips')}>
-                <div className="circle-icon">🩺</div>
-                <div className="feature-title">Health & Symptom Guide</div>
-              </div>
+              
+              {/* DELETED: Health & Symptom Guide Card (Reason: Feature removed) */}
+
+              {/* RENAMED: Feature Title */}
               <div className="feature-icon-card" onClick={() => navigate('/interactions')}>
                 <div className="circle-icon">⚠️</div>
-                <div className="feature-title">Interaction Checker</div>
+                <div className="feature-title">Drug Interaction Check</div>
               </div>
             </section>
 
@@ -110,16 +109,11 @@ function App() {
           </div>
         } />
 
-        <Route path="/tips" element={
-          <div style={{padding: '20px'}}>
-             <HealthTips />
-             <button onClick={() => navigate('/')} style={backButtonStyle}>← Back to Home</button>
-          </div>
-        } />
+        {/* DELETED: Route path="/tips" (Reason: Feature removed) */}
 
         <Route path="/interactions" element={
           <div style={{padding: '20px'}}>
-             <InteractionChecker medicines={medicines} />
+             <InteractionChecker />
              <button onClick={() => navigate('/')} style={backButtonStyle}>← Back to Home</button>
           </div>
         } />
