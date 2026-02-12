@@ -14,8 +14,8 @@ import DrugBrowse from './components/DrugBrowse';
 
 function App() {
   // --- STATE MANAGEMENT ---
-  // Store the list of all medicines (fetched from backend)
-  const [medicines, setMedicines] = useState([]);
+  // Remove 'medicines' if you aren't using it
+  const [, setMedicines] = useState([]);
   
   // Used to force a re-render of components when the logo is clicked (Hard Reset)
   const [refreshKey, setRefreshKey] = useState(0); 
