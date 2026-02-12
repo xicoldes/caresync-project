@@ -3,41 +3,41 @@ const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/db');
 
-// Import Routes
+// --- IMPORT ROUTES ---
 const medicineRoutes = require('./routes/medicineRoutes');
-const interactionRoutes = require('./routes/interactionRoutes'); // Ensure this file exists
+const interactionRoutes = require('./routes/interactionRoutes'); 
 const fdaRoutes = require('./routes/fdaRoutes');
 const userRoutes = require('./routes/userRoutes');
 
 const app = express();
 
 // --- MIDDLEWARE ---
-app.use(express.json());
-app.use(cors({
-  origin: [
-    "http://localhost:3000", 
-    "https://graceful-courtesy-production.up.railway.app" 
-  ],
-  credentials: true
-}));
 
-// --- 🔍 DEBUG LOGGER (Critical) ---
-// This will print a message in your terminal whenever you click "Check"
+// 1. CORS FIX (Allow All Origins)
+// We replaced the specific list with this simple command.
+// This allows your Railway frontend, Localhost, and any other device to connect.
+app.use(cors()); 
+
+// 2. JSON Parser (Allows server to read data sent from frontend)
+app.use(express.json());
+
+// 3. DEBUG LOGGER (Helps you see requests in the terminal)
 app.use((req, res, next) => {
   console.log(`📡 [${new Date().toLocaleTimeString()}] Request: ${req.method} ${req.url}`);
   next();
 });
 
-// Connect to Database
+// --- DATABASE CONNECTION ---
 connectDB();
 
-// --- ROUTES ---
+// --- ROUTE HANDLERS ---
 app.use('/api/medicines', medicineRoutes);
-// ✅ NEW MAP: This tells the server to send "/safety" requests to the interaction checker
 app.use('/api/safety', interactionRoutes); 
 app.use('/api/fda', fdaRoutes);
 app.use('/api/user', userRoutes);
 
+// --- START SERVER ---
+// Railway automatically provides a PORT, otherwise use 5000 for localhost
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
