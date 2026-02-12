@@ -1,6 +1,6 @@
 {
   "name": "client",
-  "proxy": "http://localhost:5000",
+  "proxy": "https://caresync-project-production-fff5.up.railway.app",
   "version": "0.1.0",
   "private": true,
   "dependencies": {

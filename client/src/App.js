@@ -31,7 +31,7 @@ function App() {
   useEffect(() => {
     const fetchMedicines = async () => {
       try {
-        const res = await axios.get('http://localhost:5001/api/medicines');
+        const res = await axios.get('https://caresync-project-production-fff5.up.railway.app/api/medicines');
         setMedicines(res.data);
       } catch (error) { 
         console.error("Error fetching initial data:", error); 

@@ -10,7 +10,7 @@ function MyCabinet() {
 
   const fetchCabinet = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/user/medicines'); 
+      const res = await axios.get('https://caresync-project-production-fff5.up.railway.app/api/user/medicines'); 
       setMedicines(res.data);
     } catch (error) {
       console.error("Error fetching cabinet:", error);
@@ -27,7 +27,7 @@ function MyCabinet() {
     if (!window.confirm(`Are you sure you want to remove ${name}?`)) return;
 
     try {
-      await axios.delete(`http://localhost:5000/api/user/remove/${id}`);
+      await axios.delete(`https://caresync-project-production-fff5.up.railway.app/api/user/remove/${id}`);
       setMedicines(medicines.filter(med => med._id !== id));
     } catch (error) {
       alert("Error removing item.");

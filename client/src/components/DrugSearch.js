@@ -55,7 +55,7 @@ function DrugSearch() {
     setShowDropdown(false);
 
     try {
-      const res = await axios.get(`http://localhost:5000/api/fda/search?query=${searchTerm}`);
+      const res = await axios.get(`https://caresync-project-production-fff5.up.railway.app/api/fda/search?query=${searchTerm}`);
       if (res.data && res.data.length > 0) {
         setSelectedDrug(res.data[0]);
       } else { 
@@ -81,7 +81,7 @@ function DrugSearch() {
   // --- UPDATED SAVE FUNCTION ---
   const addToCabinet = async (drug) => {
     try {
-      await axios.post('http://localhost:5000/api/user/add', {
+      await axios.post('https://caresync-project-production-fff5.up.railway.app/api/user/add', {
         brandName: drug.brandName,
         genericName: drug.genericName,
         details: drug 

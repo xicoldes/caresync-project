@@ -70,7 +70,7 @@ function InteractionChecker() {
     setLoading(true);
     try {
       // Using Port 5000 as per your last successful configuration
-      const res = await axios.post('http://localhost:5000/api/safety/check', {
+      const res = await axios.post('https://caresync-project-production-fff5.up.railway.app/api/safety/check', {
         drugs: drugList
       });
       setResult(res.data);
