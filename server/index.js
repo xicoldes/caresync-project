@@ -13,7 +13,13 @@ const app = express();
 
 // --- MIDDLEWARE ---
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin: [
+    "http://localhost:3000", 
+    "https://graceful-courtesy-production.up.railway.app" 
+  ],
+  credentials: true
+}));
 
 // --- 🔍 DEBUG LOGGER (Critical) ---
 // This will print a message in your terminal whenever you click "Check"
