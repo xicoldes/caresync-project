@@ -14,8 +14,8 @@ import DrugBrowse from './components/DrugBrowse';
 
 function App() {
   // --- STATE MANAGEMENT ---
-  // Remove 'medicines' if you aren't using it
-  const [, setMedicines] = useState([]);
+  // Store the list of all medicines (fetched from backend)
+  const [medicines, setMedicines] = useState([]);
   
   // Used to force a re-render of components when the logo is clicked (Hard Reset)
   const [refreshKey, setRefreshKey] = useState(0); 
@@ -31,7 +31,7 @@ function App() {
   useEffect(() => {
     const fetchMedicines = async () => {
       try {
-        const res = await axios.get('https://caresync-project-production-fff5.up.railway.app/api/medicines');
+        const res = await axios.get('http://localhost:5001/api/medicines');
         setMedicines(res.data);
       } catch (error) { 
         console.error("Error fetching initial data:", error); 

@@ -8,6 +8,7 @@ require('dotenv').config();
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
 // --- LOCAL SINGAPORE DRUG DATABASE ---
+// (Ensure Curam is here so it works even if FDA fails)
 const LOCAL_DRUGS = [
   {
     brandName: "Curam",
@@ -29,10 +30,11 @@ const LOCAL_DRUGS = [
   }
 ];
 
-// --- 🧠 HELPER 1: RESOLVE BRAND TO GENERIC ---
+// --- 🧠 HELPER 1: RESOLVE BRAND TO GENERIC (FIXED) ---
 async function getGenericNameWithAI(brandName) {
   const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
   
+  // UPDATED PROMPT: Asks for simpler names to match FDA database better
   const prompt = `
     What is the active generic ingredient for the drug brand "${brandName}"?
     Return the standard US FDA generic name.
@@ -46,7 +48,7 @@ async function getGenericNameWithAI(brandName) {
   try {
     const result = await model.generateContent(prompt);
     const text = result.response.text().trim().replace(/\.$/, ''); 
-    console.log(`🧠 [AI Helper] Translation: "${brandName}" -> "${text}"`);
+    console.log(`🧠 AI Translation: "${brandName}" -> "${text}"`);
     return text;
   } catch (error) {
     console.error("❌ Brand Resolution Error:", error.message);
@@ -65,20 +67,14 @@ async function findBestMatchWithAI(userQuery, fdaResults) {
   }).join("\n");
 
   const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-  
   const prompt = `
     User searched for: "${userQuery}"
     I have these results from the FDA:
     ${simplifiedList}
 
-    Task: Select the index of the MAIN, GENERAL version of the drug.
-    
-    Rules:
-    1. Prefer exact brand matches (e.g. "Zyrtec") over specific variants (e.g. "Zyrtec Allergy" or "Zyrtec-D") IF possible.
-    2. Avoid "Children's" versions unless the user asked for it.
-    3. If the user searched a generic name, pick the most standard brand representative.
-    
-    Return ONLY the index number (e.g. "0").
+    Which index number represents the MAIN, STANDARD, ADULT version of the drug? 
+    Avoid "Children's" or "pm" versions unless the user asked for them.
+    Return ONLY the index number (e.g. "0" or "2"). If none match well, return "0".
   `;
 
   try {
@@ -90,34 +86,24 @@ async function findBestMatchWithAI(userQuery, fdaResults) {
   }
 }
 
-// --- AI HELPER: SUMMARIZATION (MAJOR UPDATE) ---
-// Updated to accept 'userQuery' to fix naming mismatches (Amoxil vs Amoxicillin)
-async function simplifyWithAI(drugName, rawData, userQuery) {
+// --- AI HELPER: SUMMARIZATION ---
+async function simplifyWithAI(drugName, rawData) {
   const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
   const prompt = `
-    You are an expert pharmacist.
-    The user searched for: "${userQuery}".
-    The FDA data provided is for: "${drugName}".
+    You are an expert pharmacist providing a detailed consultation. 
+    Analyze the FDA data below for the drug "${drugName}" and provide a comprehensive, informative summary for a patient.
     
-    Task 1: Determine the "Standard Display Name".
-    - IF the user's search term ("${userQuery}") is the correct scientific/common name for this drug (e.g. User: "Amoxicillin", Data: "Amoxil"), USE THE USER'S TERM as the standard_brand_name.
-    - Otherwise, use the most common, recognizable Brand Name.
-    - Title Case only.
-
-    Task 2: Provide a comprehensive patient summary.
+    Provide specific, useful details.
     
-    Return strictly VALID JSON.
+    Return strictly VALID JSON. No Markdown. No code blocks.
     Structure:
     {
-      "standard_brand_name": "The display title (See Task 1 rules)",
-      "standard_generic_name": "The clean generic name",
-      "common_brands": ["Brand 1", "Brand 2", "Brand 3"],
       "purpose": "Detailed explanation of what this drug treats and how it works (2-3 sentences).",
-      "usage": ["Specific instruction 1", "Specific instruction 2"],
-      "side_effects": ["Common side effect 1", "Common side effect 2", "Serious side effect"],
-      "warnings": ["Critical warning 1", "Critical warning 2"],
-      "interactions": ["Drug 1 to avoid", "Interaction 2"]
+      "usage": ["Specific instruction 1 (e.g., take with food)", "Specific instruction 2 (e.g., dosage timing)", "What to do if missed dose"],
+      "side_effects": ["Common side effect 1", "Common side effect 2", "Serious side effect to watch for"],
+      "warnings": ["Critical warning 1 (e.g., pregnancy safety)", "Critical warning 2 (e.g., alcohol use)", "Who should NOT take this"],
+      "interactions": ["Drug class 1 to avoid", "Specific medication interaction", "Food/Supplement interaction"]
     }
 
     Data:
@@ -145,6 +131,7 @@ const getFDAText = (item, field) => {
   return null;
 };
 
+// --- HELPER: Title Case ---
 const toTitleCase = (str) => {
   if (!str) return "";
   return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
@@ -168,13 +155,12 @@ router.get('/search', async (req, res) => {
   if (!query) return res.status(400).json({ message: "Search term required" });
 
   const cleanQuery = query.toLowerCase().trim();
-  console.log(`\n🔎 [NEW SEARCH] Received query: "${cleanQuery}"`);
 
   // --- ⚡ STEP 1: CHECK CACHE ---
   try {
     const cachedResult = await CachedDrug.findOne({ searchQuery: cleanQuery });
     if (cachedResult) {
-      console.log(`⚡ [Cache Hit] Serving "${cleanQuery}" from Database`);
+      console.log(`⚡ Serving "${cleanQuery}" from Cache`);
       return res.json([cachedResult.data]);
     }
   } catch (err) {
@@ -186,30 +172,30 @@ router.get('/search', async (req, res) => {
 
   // --- STEP 3: SEARCH FDA ---
   try {
-    console.log(`🌐 [FDA API] Fetching data from FDA...`);
-    let fdaUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.brand_name:"${query}"+openfda.generic_name:"${query}"&limit=10`; 
+    let fdaUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.brand_name:"${query}"+openfda.generic_name:"${query}"&limit=5`;
     let response = await axios.get(fdaUrl).catch(() => null); 
     
     let fdaItem = null;
     let resolvedGenericName = null;
 
     if (response?.data?.results?.length > 0) {
-        console.log("🤔 [Selection] Found multiple FDA results. Asking AI to pick the best one...");
+        console.log("🔍 Found multiple results. Asking AI to pick the best one...");
         fdaItem = await findBestMatchWithAI(cleanQuery, response.data.results);
     } 
     
     // Fallback: Translate Brand -> Generic
     if (!fdaItem) {
-       console.log("🔦 [Fallback] Direct match not found. Asking AI to resolve generic name...");
+       console.log("🤔 Direct match not found. Asking AI to translate brand...");
        resolvedGenericName = await getGenericNameWithAI(cleanQuery);
        
        if (resolvedGenericName) {
+         // Search using the SIMPLER generic name from AI
          const genericUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.generic_name:"${resolvedGenericName}"&limit=5`;
          const genericResponse = await axios.get(genericUrl).catch(() => null);
          
          if (genericResponse && genericResponse.data.results) {
             fdaItem = await findBestMatchWithAI(resolvedGenericName, genericResponse.data.results);
-            console.log(`✅ [FDA Found] Data located via generic: ${resolvedGenericName}`);
+            console.log(`✅ Found FDA data using generic: ${resolvedGenericName}`);
          }
        }
     }
@@ -217,25 +203,23 @@ router.get('/search', async (req, res) => {
     if (!fdaItem) throw new Error("Drug not found");
 
     const meta = fdaItem.openfda || {};
-    // Determine the name to send to AI for summarization
-    const nameForAI = resolvedGenericName ? toTitleCase(cleanQuery) : (meta.brand_name ? meta.brand_name[0] : meta.generic_name?.[0]);
+    const finalDrugName = resolvedGenericName ? toTitleCase(cleanQuery) : (meta.brand_name ? meta.brand_name[0] : meta.generic_name?.[0]);
+    const finalGenericName = resolvedGenericName || (meta.generic_name ? toTitleCase(meta.generic_name[0]) : "Generic");
 
-    console.log(`🤖 [AI Processing] Summarizing data for: ${nameForAI}...`);
-    
-    // Pass cleanQuery (User's original search) to AI to ensure title matches user intent
-    const aiData = await simplifyWithAI(nameForAI, {
+    console.log(`🤖 AI Summarizing: ${finalDrugName}...`);
+    const aiData = await simplifyWithAI(finalDrugName, {
       indications: fdaItem.indications_and_usage,
       warnings: fdaItem.warnings,
       dosage: fdaItem.dosage_and_administration,
       reactions: fdaItem.adverse_reactions,
       interactions: fdaItem.drug_interactions
-    }, cleanQuery);
+    });
 
     const finalResult = {
       source: "US FDA",
-      brandName: aiData?.standard_brand_name || toTitleCase(nameForAI), 
-      genericName: aiData?.standard_generic_name || toTitleCase(meta.generic_name?.[0] || "Generic"),
-      brandNamesList: aiData?.common_brands || (meta.brand_name ? meta.brand_name.slice(0, 5) : []), 
+      brandName: toTitleCase(finalDrugName),
+      genericName: toTitleCase(finalGenericName),
+      brandNamesList: meta.brand_name ? meta.brand_name.slice(0, 5) : [], 
       pharm_class: meta.pharm_class_epc ? meta.pharm_class_epc[0] : "Unknown Class",
       rxcui: null, 
 
@@ -253,17 +237,20 @@ router.get('/search', async (req, res) => {
       }
     }
 
+    // Save to Cache
     try {
       await new CachedDrug({ searchQuery: cleanQuery, data: finalResult }).save();
-      console.log("💾 [Database] Result saved to Cache");
+      console.log("💾 Saved to Cache");
     } catch (saveErr) { console.error("Cache Save Error:", saveErr.message); }
 
     res.json([finalResult]);
 
   } catch (error) {
-    console.error("❌ Search Error:", error.message);
+    console.error("Search Error:", error.message);
     
+    // ✅ CRITICAL FIX: If FDA fails, return the Local Match if we have it!
     if (localMatch) {
+       console.log("⚠️ FDA Search failed, but found in Local Database. Returning Local data.");
        return res.json([{ ...localMatch, source: "SG Database (Offline)" }]);
     }
 
