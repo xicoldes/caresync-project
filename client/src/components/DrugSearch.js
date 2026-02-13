@@ -9,10 +9,38 @@ function DrugSearch() {
   const [query, setQuery] = useState(urlQuery);
   const [selectedDrug, setSelectedDrug] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [statusText, setStatusText] = useState("Search"); 
   const [error, setError] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
+  
+  // --- NEW: Cache Status State ---
+  const [cacheStatus, setCacheStatus] = useState(""); 
+
   const wrapperRef = useRef(null); 
+
+  // --- Dynamic Loading Messages ---
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      const messages = [
+        "Searching FDA database...",
+        "Analyzing with AI...",
+        "Almost there...",
+        "Formatting results...",
+        "Hang on tight..."
+      ];
+      let i = 0;
+      setStatusText(messages[0]);
+      interval = setInterval(() => {
+        i = (i + 1) % messages.length;
+        setStatusText(messages[i]);
+      }, 1500); 
+    } else {
+      setStatusText("Search");
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
 
   useEffect(() => {
     if (urlQuery) {
@@ -55,6 +83,7 @@ function DrugSearch() {
     setShowDropdown(false);
 
     try {
+      // LIVE URL
       const res = await axios.get(`https://caresync-project-production-fff5.up.railway.app/api/fda/search?query=${searchTerm}`);
       if (res.data && res.data.length > 0) {
         setSelectedDrug(res.data[0]);
@@ -78,7 +107,6 @@ function DrugSearch() {
     setSearchParams({ q: suggestion });
   };
 
-  // --- UPDATED SAVE FUNCTION ---
   const addToCabinet = async (drug) => {
     try {
       await axios.post('https://caresync-project-production-fff5.up.railway.app/api/user/add', {
@@ -86,14 +114,32 @@ function DrugSearch() {
         genericName: drug.genericName,
         details: drug 
       });
-      // Updated Success Message
       alert(`Success! ${drug.brandName} added to your Saved Medicines.`);
     } catch (err) { 
       console.error(err);
-      // ✅ IMPROVED ERROR: Shows the actual message from the backend
-      // This will likely say "Item already in cabinet" if you saved it before
       const message = err.response?.data?.message || "Could not save medicine. Check backend connection.";
       alert(`Error: ${message}`); 
+    }
+  };
+
+  // --- NEW: Clear Cache Function ---
+  const handleClearCache = async () => {
+    if (!window.confirm("⚠️ Developer Tool:\n\nAre you sure you want to clear the AI Search Cache? This will force the system to learn new data for the next search.")) return;
+    
+    setCacheStatus("Clearing...");
+    try {
+        await axios.post('https://caresync-project-production-fff5.up.railway.app/api/fda/clear-cache');
+        setCacheStatus("✅ Cache Cleared!");
+        setTimeout(() => setCacheStatus(""), 3000); // Hide message after 3 seconds
+        
+        // Optional: clear current results to force user to search again
+        setSelectedDrug(null);
+        setQuery('');
+        alert("Cache cleared! Try searching for 'Amoxicillin' now.");
+    } catch (err) {
+        console.error(err);
+        setCacheStatus("❌ Error");
+        alert("Failed to clear cache.");
     }
   };
 
@@ -164,8 +210,8 @@ function DrugSearch() {
               onFocus={() => query.length >= 2 && setShowDropdown(true)}
               autoComplete="off"
             />
-            <button id="search-btn" type="submit" style={styles.button}>
-              {loading ? "Searching..." : "Search"}
+            <button id="search-btn" type="submit" style={{...styles.button, minWidth: '120px'}} disabled={loading}>
+              {statusText}
             </button>
           </form>
           {showDropdown && suggestions.length > 0 && (
@@ -180,6 +226,13 @@ function DrugSearch() {
           )}
         </div>
         {error && <div style={styles.error}>{error}</div>}
+        
+        {/* --- NEW: Developer Clear Cache Button --- */}
+        <div style={{textAlign: 'right', marginTop: '10px'}}>
+            <button onClick={handleClearCache} style={styles.devLink}>
+                {cacheStatus ? cacheStatus : "🔄 Reset Search Cache (Dev Tool)"}
+            </button>
+        </div>
       </div>
 
       {selectedDrug && (
@@ -205,7 +258,6 @@ function DrugSearch() {
             </div>
           </div>
 
-          {/* RENAME: Updated button text */}
           <button onClick={() => addToCabinet(selectedDrug)} style={styles.addButton}>+ Save to List</button>
 
           <DrugSection id="overview" emoji="💊" title={`What is ${selectedDrug.brandName}?`} content={selectedDrug.purpose} />
@@ -233,6 +285,10 @@ const styles = {
   dropdown: { position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #ccc', zIndex: 1000, listStyle: 'none', padding: 0, margin: 0 },
   dropdownItem: { padding: '10px', borderBottom: '1px solid #eee', cursor: 'pointer' },
   error: { marginTop: '10px', color: 'red' },
+  
+  // NEW STYLE for Cache Button
+  devLink: { background: 'none', border: 'none', color: '#999', fontSize: '0.85rem', cursor: 'pointer', textDecoration: 'underline' },
+
   headerBlock: { borderBottom: '1px solid #ddd', paddingBottom: '20px', marginBottom: '30px' },
   mainTitle: { fontFamily: 'Georgia, serif', fontSize: '2.5rem', margin: '0 0 10px 0', color: '#000' },
   metaData: { fontSize: '0.95rem', lineHeight: '1.6', color: '#333', marginBottom: '20px' },
