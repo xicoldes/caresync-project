@@ -68,22 +68,26 @@ function InteractionChecker() {
       return;
     }
     setLoading(true);
+
+    // ✅ AUTOMATIC URL SELECTION
+    // Uses REACT_APP_API_URL from .env or Dashboard, otherwise defaults to localhost:5000
+    const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+
     try {
-      // Using Port 5000 as per your last successful configuration
-      const res = await axios.post('https://caresync-project-production-fff5.up.railway.app/api/safety/check', {
+      const res = await axios.post(`${API_BASE_URL}/api/safety/check`, {
         drugs: drugList
       });
       setResult(res.data);
     } catch (error) {
       console.error(error);
-      alert("Error checking drugs. Check console.");
+      const msg = error.response?.data?.error || "Error checking drugs. Ensure backend is running.";
+      alert(msg);
     }
     setLoading(false);
   };
 
   return (
     <div style={styles.container}>
-      {/* MODERN BACK BUTTON (Top Left) */}
       <button onClick={() => navigate('/')} style={styles.backButton}>
         ← Back to Home
       </button>
@@ -95,7 +99,6 @@ function InteractionChecker() {
         </p>
       </div>
 
-      {/* INPUT SECTION */}
       <div style={{position: 'relative', marginBottom: '25px'}} ref={wrapperRef}>
         <form onSubmit={addDrug} style={styles.form}>
           <input
@@ -121,7 +124,6 @@ function InteractionChecker() {
         )}
       </div>
 
-      {/* DRUG LIST */}
       <div style={styles.listContainer}>
         {drugList.length === 0 && <p style={{color:'#999', fontStyle:'italic'}}>List is empty.</p>}
         {drugList.map((drug, i) => (
@@ -132,7 +134,6 @@ function InteractionChecker() {
         ))}
       </div>
 
-      {/* CHECK BUTTON */}
       {drugList.length >= 2 && (
         <button 
           onClick={checkInteractions} 
@@ -143,7 +144,6 @@ function InteractionChecker() {
         </button>
       )}
 
-      {/* RESULTS DISPLAY (IMPROVED UI) */}
       {result && (
         <div style={{
           ...styles.resultBox, 
@@ -190,39 +190,22 @@ const styles = {
   backButton: { 
     background: 'none', border: 'none', color: '#666', 
     fontSize: '0.95rem', cursor: 'pointer', marginBottom: '20px', 
-    padding: '8px 0', display: 'flex', alignItems: 'center', fontWeight: '500',
-    transition: 'color 0.2s'
+    padding: '8px 0', display: 'flex', alignItems: 'center', fontWeight: '500'
   },
   header: { marginBottom: '30px', textAlign: 'center' },
   title: { color: '#104c97', marginBottom: '10px', fontSize: '2.2rem' },
   subtitle: { color: '#666', fontSize: '1.1rem' },
-  
   form: { display: 'flex', gap: '12px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' },
   input: { flex: 1, padding: '15px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '1.1rem', outline: 'none' },
   addBtn: { padding: '15px 30px', backgroundColor: '#1e5bbd', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' },
-  
   dropdown: { position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #eee', zIndex: 1000, listStyle: 'none', padding: 0, margin: '5px 0 0 0', borderRadius: '6px', boxShadow: '0 10px 15px rgba(0,0,0,0.1)' },
   dropdownItem: { padding: '15px', borderBottom: '1px solid #f5f5f5', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '1rem' },
-
   listContainer: { marginBottom: '30px', display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center' },
   drugTag: { backgroundColor: '#eef3fc', color: '#1e5bbd', padding: '10px 20px', borderRadius: '30px', display: 'flex', alignItems: 'center', fontWeight: '600', fontSize: '1rem' },
   removeBtn: { background: 'none', border: 'none', marginLeft: '10px', cursor: 'pointer', fontSize: '1.2rem', color: '#1e5bbd', opacity: 0.7 },
-  
   checkBtn: { width: '100%', padding: '18px', backgroundColor: '#333', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.2rem', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' },
-  
-  // IMPROVED RESULT BOX STYLES
-  resultBox: { 
-    marginTop: '40px', 
-    padding: '35px', 
-    backgroundColor: 'white', 
-    borderRadius: '12px', 
-    boxShadow: '0 10px 30px rgba(0,0,0,0.08)',
-    border: '1px solid #f0f0f0'
-  },
-  resultContent: {
-    color: '#333',
-    textAlign: 'left'
-  }
+  resultBox: { marginTop: '40px', padding: '35px', backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.08)', border: '1px solid #f0f0f0' },
+  resultContent: { color: '#333', textAlign: 'left' }
 };
 
 export default InteractionChecker;

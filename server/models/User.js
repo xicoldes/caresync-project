@@ -1,14 +1,10 @@
 const mongoose = require('mongoose');
 
-const userSchema = new mongoose.Schema({
-  name: { type: String, default: "Demo Student" },
-  savedMedicines: [
-    {
-      brandName: String,    // e.g. "Advil"
-      genericName: String,  // e.g. "Ibuprofen"
-      warnings: String      // We save the main warning so we don't need to ask FDA again
-    }
-  ]
+const UserSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  savedMedicines: [{ type: Object }] // To store their drug list
 });
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = mongoose.model('User', UserSchema);
