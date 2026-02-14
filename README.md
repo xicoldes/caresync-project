@@ -36,15 +36,24 @@
 ## Demo
 
 ### Smart Drug Search
-![Search Results Screenshot](images/search.png)
+<img width="1919" height="1056" alt="image" src="https://github.com/user-attachments/assets/a0f13897-fa83-4558-8a8f-5b3dba029d9c" />
+
+<img width="1919" height="1057" alt="image" src="https://github.com/user-attachments/assets/d820f54d-c4b3-4059-9d18-da1ebb226d68" />
+
+<img width="1918" height="1058" alt="image" src="https://github.com/user-attachments/assets/a0e37fa4-3046-4fe6-9077-76136d5cc658" />
 *AI translates brand names and prioritizes the most relevant FDA results.*
 
 ### My Medicine Cabinet
-![My Cabinet Screenshot](images/cabinet.png)
+<img width="1919" height="1058" alt="image" src="https://github.com/user-attachments/assets/001f9c08-a1b0-47be-8b08-13cf2e003af5" />
+
+<img width="1919" height="1054" alt="image" src="https://github.com/user-attachments/assets/833def13-118e-4f09-95d8-0feb48705f87" />
+
+<img width="1919" height="1054" alt="image" src="https://github.com/user-attachments/assets/e2e321ac-fd00-42fe-a9c3-2cabc34ddaee" />
 *Manage your saved medications with a clean, responsive card layout.*
 
 ### Interaction Checker
-![Interaction Checker Screenshot](images/interaction.png)
+<img width="1919" height="1056" alt="image" src="https://github.com/user-attachments/assets/1dddeacb-ad3b-4816-ac96-d7e85ebd7f0c" />
+
 *Check for potential adverse reactions between your saved drugs.*
 
 ---
@@ -145,31 +154,6 @@ Markdown
 - **Drug Interaction Checker**: Analyzes potential interactions between multiple drugs in the user's list using AI analysis.
 - **Responsive UI**: A modern interface featuring a card-grid layout for saved medicines, detailed modal views, and seamless navigation.
 - **Deep Linking**: Built with **React Router** to support browser history, allowing users to bookmark specific search results and navigate back/forward intuitively.
-
----
-
-## Demo
-
-### Smart Drug Search
-<img width="1919" height="1056" alt="image" src="https://github.com/user-attachments/assets/a0f13897-fa83-4558-8a8f-5b3dba029d9c" />
-
-<img width="1919" height="1057" alt="image" src="https://github.com/user-attachments/assets/d820f54d-c4b3-4059-9d18-da1ebb226d68" />
-
-<img width="1918" height="1058" alt="image" src="https://github.com/user-attachments/assets/a0e37fa4-3046-4fe6-9077-76136d5cc658" />
-*AI translates brand names and prioritizes the most relevant FDA results.*
-
-### My Medicine Cabinet
-<img width="1919" height="1058" alt="image" src="https://github.com/user-attachments/assets/001f9c08-a1b0-47be-8b08-13cf2e003af5" />
-
-<img width="1919" height="1054" alt="image" src="https://github.com/user-attachments/assets/833def13-118e-4f09-95d8-0feb48705f87" />
-
-<img width="1919" height="1054" alt="image" src="https://github.com/user-attachments/assets/e2e321ac-fd00-42fe-a9c3-2cabc34ddaee" />
-*Manage your saved medications with a clean, responsive card layout.*
-
-### Interaction Checker
-<img width="1919" height="1056" alt="image" src="https://github.com/user-attachments/assets/1dddeacb-ad3b-4816-ac96-d7e85ebd7f0c" />
-
-*Check for potential adverse reactions between your saved drugs.*
 
 ---
 
