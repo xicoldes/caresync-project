@@ -1,123 +1,122 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const Groq = require("groq-sdk"); 
 const CachedDrug = require('../models/CachedDrug'); 
 require('dotenv').config();
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// --- LOCAL SINGAPORE DRUG DATABASE ---
-// (Ensure Curam is here so it works even if FDA fails)
-const LOCAL_DRUGS = [
-  {
-    brandName: "Curam",
-    genericName: "Amoxicillin and Clavulanate",
-    manufacturer: "Sandoz",
-    description: "Antibiotic used to treat bacterial infections.",
-    purpose: "Curam is an antibiotic used for respiratory, skin, and urinary tract infections.",
-    warnings: "Do not take if you are allergic to Penicillin.",
-    do_not_use: "If you have a history of liver problems caused by this drug."
-  },
-  {
-    brandName: "Panadol Extra",
-    genericName: "Acetaminophen",
-    manufacturer: "GSK",
-    description: "Stronger pain reliever for bad headaches.",
-    purpose: "Panadol Extra provides relief from mild to moderate pain and fever.",
-    warnings: "Contains caffeine. Do not exceed 8 tablets in 24 hours.",
-    do_not_use: "If you have severe liver failure."
-  }
-];
-
-// --- 🧠 HELPER 1: RESOLVE BRAND TO GENERIC (FIXED) ---
+// --- 🧠 HELPER 1: RESOLVE BRAND TO GENERIC ---
 async function getGenericNameWithAI(brandName) {
-  const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-  
-  // UPDATED PROMPT: Asks for simpler names to match FDA database better
   const prompt = `
-    What is the active generic ingredient for the drug brand "${brandName}"?
-    Return the standard US FDA generic name.
+    Convert the brand name "${brandName}" to its standard US FDA generic name.
     
-    Rules:
-    1. Keep it simple. Omit chemical states like "trihydrate" or "succinate" unless necessary.
-    2. Example: Return "Amoxicillin and Clavulanate" instead of "Amoxicillin trihydrate and potassium clavulanate".
-    3. Return ONLY the name. No punctuation.
+    RULES:
+    1. Use "Clavulanate Potassium" instead of "Clavulanic Acid".
+    2. Use "Hydrochloride" instead of "HCL".
+    3. Return strictly VALID JSON.
+    
+    Example: { "generic_name": "Amoxicillin and Clavulanate Potassium" }
   `;
-
   try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().trim().replace(/\.$/, ''); 
-    console.log(`🧠 AI Translation: "${brandName}" -> "${text}"`);
-    return text;
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: "openai/gpt-oss-120b", // ✅ Using Groq's 120b model
+      response_format: { type: "json_object" } 
+    });
+    
+    const result = JSON.parse(completion.choices[0]?.message?.content || "{}");
+    return result.generic_name?.trim() || null;
   } catch (error) {
-    console.error("❌ Brand Resolution Error:", error.message);
     return null;
   }
 }
 
-// --- 🧠 HELPER 2: PICK BEST MATCH ---
-async function findBestMatchWithAI(userQuery, fdaResults) {
-  if (!fdaResults || fdaResults.length === 0) return null;
-  
-  const simplifiedList = fdaResults.map((item, index) => {
-     const brand = item.openfda?.brand_name ? item.openfda.brand_name[0] : "Unknown";
-     const generic = item.openfda?.generic_name ? item.openfda.generic_name[0] : "Unknown";
-     return `${index}: Brand="${brand}", Generic="${generic}"`;
-  }).join("\n");
+// --- ⚡ HELPER 2: LOGIC MATCH (The "Purity" Filter) ---
+function findBestMatchLogic(userQuery, results) {
+    const q = userQuery.toLowerCase().trim();
+    
+    // SCORE CANDIDATES
+    const scored = results.map(r => {
+        let score = 0;
+        const brands = (r.openfda?.brand_name || []).map(s => s.toLowerCase());
+        const generics = (r.openfda?.generic_name || []).map(s => s.toLowerCase());
+        const allNames = [...brands, ...generics];
+        
+        // 1. EXACT MATCH BONUSES
+        if (generics.includes(q)) score += 100;
+        if (brands.includes(q)) score += 100;
 
-  const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-  const prompt = `
-    User searched for: "${userQuery}"
-    I have these results from the FDA:
-    ${simplifiedList}
+        // 2. COMBINATION PENALTY (The Augmentin Fix)
+        // If user query does NOT have "and", "with", or "+", but the result DOES...
+        // penalize it heavily so "Amoxicillin" beats "Amoxicillin and Clavulanate".
+        const isCombo = (name) => name.includes(' and ') || name.includes(' with ') || name.includes('/') || name.includes('+');
+        
+        if (!isCombo(q)) {
+            if (allNames.some(n => isCombo(n))) score -= 50; 
+        }
 
-    Which index number represents the MAIN, STANDARD, ADULT version of the drug? 
-    Avoid "Children's" or "pm" versions unless the user asked for them.
-    Return ONLY the index number (e.g. "0" or "2"). If none match well, return "0".
-  `;
+        // 3. PEDIATRIC PENALTY (The Zyrtec Fix)
+        if (!q.includes('child') && !q.includes('pediatric')) {
+            if (allNames.some(n => n.includes('child') || n.includes('pediatric'))) score -= 100;
+        }
 
-  try {
-    const result = await model.generateContent(prompt);
-    const index = parseInt(result.response.text().trim());
-    return isNaN(index) ? fdaResults[0] : fdaResults[index];
-  } catch (error) {
-    return fdaResults[0]; 
-  }
+        // 4. SUFFIX PENALTY (Hives, Allergy, Relief)
+        if (allNames.some(n => n.includes('hives') || n.includes('allergy') || n.includes('relief'))) {
+             if (!q.includes('hives') && !q.includes('allergy')) score -= 20;
+        }
+
+        // Keep the shortest name for display
+        const shortestName = allNames.sort((a, b) => a.length - b.length)[0] || "";
+        
+        return { item: r, score, name: shortestName };
+    });
+
+    // Sort by score (descending) -> then by length (shortest first)
+    scored.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.name.length - b.name.length;
+    });
+
+    // Safety: If best match is terrible (negative score), might return null, but for now take best.
+    return scored[0]?.item || null;
 }
 
-// --- AI HELPER: SUMMARIZATION ---
+// --- AI HELPER: ENRICHED SUMMARIZATION ---
 async function simplifyWithAI(drugName, rawData) {
-  const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-
   const prompt = `
-    You are an expert pharmacist providing a detailed consultation. 
-    Analyze the FDA data below for the drug "${drugName}" and provide a comprehensive, informative summary for a patient.
+    You are an expert Senior Pharmacist. Write a detailed guide for "${drugName}".
     
-    Provide specific, useful details.
+    CRITICAL: 
+    1. Identify the **ACTIVE GENERIC INGREDIENT** for 'standard_brand_name'.
+    2. Supplement the FDA data with your general medical knowledge to ensure **detailed** responses.
     
-    Return strictly VALID JSON. No Markdown. No code blocks.
-    Structure:
+    Return strictly VALID JSON:
     {
-      "purpose": "Detailed explanation of what this drug treats and how it works (2-3 sentences).",
-      "usage": ["Specific instruction 1 (e.g., take with food)", "Specific instruction 2 (e.g., dosage timing)", "What to do if missed dose"],
-      "side_effects": ["Common side effect 1", "Common side effect 2", "Serious side effect to watch for"],
-      "warnings": ["Critical warning 1 (e.g., pregnancy safety)", "Critical warning 2 (e.g., alcohol use)", "Who should NOT take this"],
-      "interactions": ["Drug class 1 to avoid", "Specific medication interaction", "Food/Supplement interaction"]
+      "standard_brand_name": "Active Generic Name (Title Case)",
+      "standard_generic_name": "Active Generic Name",
+      "common_brands": ["List 3-4 common brand names"],
+      "purpose": "Detailed explanation (2-3 sentences).",
+      "usage": ["Instruction 1", "Instruction 2", "Instruction 3"],
+      "side_effects": ["Effect 1", "Effect 2", "Effect 3", "Effect 4", "Effect 5"],
+      "warnings": ["Warning 1", "Warning 2", "Warning 3"],
+      "interactions": ["Interaction 1", "Interaction 2"],
+      "storage": "Detailed storage instructions"
     }
 
     Data:
-    ${JSON.stringify(rawData).substring(0, 15000)}
+    ${JSON.stringify(rawData).substring(0, 15000)} 
   `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    let text = response.text();
-    text = text.replace(/```json|```/g, '').trim();
-    return JSON.parse(text);
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: "openai/gpt-oss-120b", 
+      response_format: { type: "json_object" } 
+    });
+    return JSON.parse(completion.choices[0]?.message?.content || "{}");
   } catch (error) {
-    console.error("❌ AI Error:", error.message);
     return null; 
   }
 }
@@ -128,21 +127,19 @@ const getFDAText = (item, field) => {
   if (field === 'warnings') return item.warnings ? item.warnings[0] : null;
   if (field === 'side_effects') return item.adverse_reactions ? item.adverse_reactions[0] : null;
   if (field === 'dosage') return item.dosage_and_administration ? item.dosage_and_administration[0] : null;
-  return null;
+  return "Information not available.";
 };
 
-// --- HELPER: Title Case ---
 const toTitleCase = (str) => {
   if (!str) return "";
   return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
 };
 
-// --- 🧹 CLEAR CACHE ---
+// --- ROUTES ---
 router.post('/clear-cache', async (req, res) => {
     try {
         await CachedDrug.deleteMany({});
-        console.log("🧹 Cache Cleared!");
-        res.json({ message: "Cache cleared successfully." });
+        res.json({ message: "Cache cleared." });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -156,58 +153,56 @@ router.get('/search', async (req, res) => {
 
   const cleanQuery = query.toLowerCase().trim();
 
-  // --- ⚡ STEP 1: CHECK CACHE ---
-  try {
-    const cachedResult = await CachedDrug.findOne({ searchQuery: cleanQuery });
-    if (cachedResult) {
-      console.log(`⚡ Serving "${cleanQuery}" from Cache`);
-      return res.json([cachedResult.data]);
-    }
-  } catch (err) {
-    console.error("Cache Check Error:", err.message);
-  }
+  // 1. CACHE CHECK
+  const cachedResult = await CachedDrug.findOne({ searchQuery: cleanQuery });
+  if (cachedResult) return res.json([cachedResult.data]);
 
-  // --- STEP 2: CHECK LOCAL DB ---
-  const localMatch = LOCAL_DRUGS.find(d => d.brandName.toLowerCase() === cleanQuery);
-
-  // --- STEP 3: SEARCH FDA ---
+  // 2. SEARCH FDA (Primary)
   try {
-    let fdaUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.brand_name:"${query}"+openfda.generic_name:"${query}"&limit=5`;
+    let fdaUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.brand_name:"${query}"+openfda.generic_name:"${query}"&limit=50`;
     let response = await axios.get(fdaUrl).catch(() => null); 
     
     let fdaItem = null;
     let resolvedGenericName = null;
 
     if (response?.data?.results?.length > 0) {
-        console.log("🔍 Found multiple results. Asking AI to pick the best one...");
-        fdaItem = await findBestMatchWithAI(cleanQuery, response.data.results);
+        fdaItem = findBestMatchLogic(cleanQuery, response.data.results);
     } 
     
-    // Fallback: Translate Brand -> Generic
+    // 3. FALLBACK: AI TRANSLATION (Fixes Curam)
     if (!fdaItem) {
-       console.log("🤔 Direct match not found. Asking AI to translate brand...");
+       console.log("🤔 Direct match not found. Asking AI to translate...");
        resolvedGenericName = await getGenericNameWithAI(cleanQuery);
        
        if (resolvedGenericName) {
-         // Search using the SIMPLER generic name from AI
-         const genericUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.generic_name:"${resolvedGenericName}"&limit=5`;
-         const genericResponse = await axios.get(genericUrl).catch(() => null);
+         console.log(`🧠 AI resolved "${cleanQuery}" to "${resolvedGenericName}"`);
          
+         // Try Exact Generic Search
+         let genericUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.generic_name:"${resolvedGenericName}"&limit=20`;
+         let genericResponse = await axios.get(genericUrl).catch(() => null);
+         
+         // 4. EMERGENCY FALLBACK: Partial Search (If "Amox and Clav Potassium" fails, try "Amoxicillin")
+         if (!genericResponse && resolvedGenericName.includes(' ')) {
+             const firstWord = resolvedGenericName.split(' ')[0];
+             console.log(`⚠️ Full generic failed. Trying partial: "${firstWord}"`);
+             genericUrl = `https://api.fda.gov/drug/label.json?api_key=${fdaKey}&search=openfda.generic_name:"${firstWord}"&limit=20`;
+             genericResponse = await axios.get(genericUrl).catch(() => null);
+         }
+
          if (genericResponse && genericResponse.data.results) {
-            fdaItem = await findBestMatchWithAI(resolvedGenericName, genericResponse.data.results);
-            console.log(`✅ Found FDA data using generic: ${resolvedGenericName}`);
+            fdaItem = findBestMatchLogic(resolvedGenericName, genericResponse.data.results);
          }
        }
     }
 
-    if (!fdaItem) throw new Error("Drug not found");
+    if (!fdaItem) throw new Error("Drug not found in FDA database.");
 
+    // AI Summarization
     const meta = fdaItem.openfda || {};
-    const finalDrugName = resolvedGenericName ? toTitleCase(cleanQuery) : (meta.brand_name ? meta.brand_name[0] : meta.generic_name?.[0]);
     const finalGenericName = resolvedGenericName || (meta.generic_name ? toTitleCase(meta.generic_name[0]) : "Generic");
-
-    console.log(`🤖 AI Summarizing: ${finalDrugName}...`);
-    const aiData = await simplifyWithAI(finalDrugName, {
+    
+    console.log(`🤖 AI Summarizing: ${finalGenericName}...`);
+    const aiData = await simplifyWithAI(finalGenericName, {
       indications: fdaItem.indications_and_usage,
       warnings: fdaItem.warnings,
       dosage: fdaItem.dosage_and_administration,
@@ -215,45 +210,42 @@ router.get('/search', async (req, res) => {
       interactions: fdaItem.drug_interactions
     });
 
-    const finalResult = {
-      source: "US FDA",
-      brandName: toTitleCase(finalDrugName),
-      genericName: toTitleCase(finalGenericName),
-      brandNamesList: meta.brand_name ? meta.brand_name.slice(0, 5) : [], 
-      pharm_class: meta.pharm_class_epc ? meta.pharm_class_epc[0] : "Unknown Class",
-      rxcui: null, 
-
-      purpose: aiData?.purpose || getFDAText(fdaItem, 'purpose'),
-      dosage: aiData?.usage || getFDAText(fdaItem, 'dosage'),
-      side_effects: aiData?.side_effects || getFDAText(fdaItem, 'side_effects'),
-      warnings: aiData?.warnings || getFDAText(fdaItem, 'warnings'),
-      interactions: aiData?.interactions || "No interaction data available."
-    };
-
-    if (localMatch) {
-      finalResult.source = "SG Database + FDA";
-      if (cleanQuery === localMatch.brandName.toLowerCase()) {
-         finalResult.brandName = localMatch.brandName; 
-      }
+    let finalResult = {};
+    if (aiData) {
+        finalResult = {
+          source: "US FDA (AI Enhanced)",
+          brandName: aiData.standard_brand_name, 
+          genericName: aiData.standard_generic_name,
+          brandNamesList: aiData.common_brands || [],
+          pharm_class: meta.pharm_class_epc ? meta.pharm_class_epc[0] : "Unknown",
+          rxcui: null, 
+          purpose: aiData.purpose,
+          dosage: aiData.usage,
+          side_effects: aiData.side_effects,
+          warnings: aiData.warnings,
+          interactions: aiData.interactions,
+          storage: aiData.storage 
+        };
+    } else {
+        finalResult = {
+          source: "US FDA (Raw)",
+          brandName: toTitleCase(finalGenericName),
+          genericName: toTitleCase(finalGenericName),
+          brandNamesList: meta.brand_name ? meta.brand_name.slice(0, 5) : [],
+          pharm_class: meta.pharm_class_epc ? meta.pharm_class_epc[0] : "Unknown",
+          purpose: getFDAText(fdaItem, 'purpose'),
+          dosage: getFDAText(fdaItem, 'dosage'),
+          side_effects: getFDAText(fdaItem, 'side_effects'),
+          warnings: getFDAText(fdaItem, 'warnings'),
+          interactions: "See doctor"
+        };
     }
 
-    // Save to Cache
-    try {
-      await new CachedDrug({ searchQuery: cleanQuery, data: finalResult }).save();
-      console.log("💾 Saved to Cache");
-    } catch (saveErr) { console.error("Cache Save Error:", saveErr.message); }
-
+    await new CachedDrug({ searchQuery: cleanQuery, data: finalResult }).save();
     res.json([finalResult]);
 
   } catch (error) {
     console.error("Search Error:", error.message);
-    
-    // ✅ CRITICAL FIX: If FDA fails, return the Local Match if we have it!
-    if (localMatch) {
-       console.log("⚠️ FDA Search failed, but found in Local Database. Returning Local data.");
-       return res.json([{ ...localMatch, source: "SG Database (Offline)" }]);
-    }
-
     res.status(404).json({ message: "No drugs found." });
   }
 });

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 
 function DrugSearch() { 
   const [searchParams, setSearchParams] = useSearchParams();
   const urlQuery = searchParams.get('q') || ''; 
+  const navigate = useNavigate();
 
   const [query, setQuery] = useState(urlQuery);
   const [selectedDrug, setSelectedDrug] = useState(null);
@@ -14,6 +15,7 @@ function DrugSearch() {
   const [showDropdown, setShowDropdown] = useState(false);
   const wrapperRef = useRef(null); 
 
+  // --- SYNC URL & STATE ---
   useEffect(() => {
     if (urlQuery) {
       setQuery(urlQuery);
@@ -21,6 +23,7 @@ function DrugSearch() {
     } else {
       setQuery('');
       setSelectedDrug(null);
+      setError('');
     }
   }, [urlQuery]);
 
@@ -62,7 +65,7 @@ function DrugSearch() {
         throw new Error("No results found."); 
       }
     } catch (err) {
-      setError("No results found. Try checking your spelling.");
+      if (searchTerm) setError("No results found. Try checking your spelling.");
     }
     setLoading(false);
   };
@@ -78,7 +81,6 @@ function DrugSearch() {
     setSearchParams({ q: suggestion });
   };
 
-  // --- UPDATED SAVE FUNCTION ---
   const addToCabinet = async (drug) => {
     try {
       await axios.post('http://localhost:5000/api/user/add', {
@@ -86,34 +88,54 @@ function DrugSearch() {
         genericName: drug.genericName,
         details: drug 
       });
-      // Updated Success Message
       alert(`Success! ${drug.brandName} added to your Saved Medicines.`);
     } catch (err) { 
       console.error(err);
-      // ✅ IMPROVED ERROR: Shows the actual message from the backend
-      // This will likely say "Item already in cabinet" if you saved it before
       const message = err.response?.data?.message || "Could not save medicine. Check backend connection.";
       alert(`Error: ${message}`); 
     }
   };
 
+  const handleClearCache = async () => {
+    if (!window.confirm("⚠️ Clear AI Cache?")) return;
+    try {
+        await axios.post('http://localhost:5000/api/fda/clear-cache');
+        alert("Cache Cleared! Resetting...");
+        window.location.href = window.location.origin; 
+    } catch (err) {
+        alert("Failed to clear cache.");
+    }
+  };
+
+  // --- ✅ FIXED: CRASH PROOF FORMATTER ---
   const formatContent = (content) => {
     if (!content) return "Information not available.";
+
     if (Array.isArray(content)) {
       return (
         <ul style={{paddingLeft: '20px', margin: 0, color: '#333'}}>
           {content.map((item, i) => (
-            <li key={i} style={{marginBottom: '8px', lineHeight: '1.6'}}>{item}</li>
+            <li key={i} style={{marginBottom: '8px', lineHeight: '1.6'}}>
+              {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+            </li>
           ))}
         </ul>
       );
     }
-    let clean = content;
+
+    let clean = "";
+    if (typeof content === 'object') {
+        clean = JSON.stringify(content);
+    } else {
+        clean = String(content);
+    }
+
     clean = clean.replace(/SECTION \d+:/gi, "").trim();
     clean = clean.replace(/(\b\d+\s+[A-Z\s]{3,})/g, "\n\n### $1\n");
     clean = clean.replace(/(\(\d+\))/g, "\n$1");
     clean = clean.replace(/(\d+\.)/g, "\n$1");
     clean = clean.replace(/(•|-)\s/g, "\n• ");
+    
     const lines = clean.split('\n');
     return (
       <div style={{lineHeight: '1.6', color: '#333'}}>
@@ -138,7 +160,7 @@ function DrugSearch() {
   };
 
   const DrugSection = ({ id, title, emoji, content }) => {
-    if (!content || content === "No info") return null;
+    if (content === null || content === undefined || content === "No info") return null;
     return (
       <div id={id} style={styles.sectionCard}>
         <h2 style={styles.cardTitle}>
@@ -157,7 +179,7 @@ function DrugSearch() {
           <form onSubmit={handleSearch} style={styles.searchBox}>
             <input 
               type="text" 
-              placeholder="Search for a medication..." 
+              placeholder="Search for a medication (e.g. Zyrtec, Amoxicillin)..." 
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               style={styles.input}
@@ -180,11 +202,16 @@ function DrugSearch() {
           )}
         </div>
         {error && <div style={styles.error}>{error}</div>}
+        
+        <div style={{textAlign: 'right', marginTop: '10px'}}>
+            <button onClick={handleClearCache} style={styles.devLink}>
+                🔄 Reset / Clear Cache
+            </button>
+        </div>
       </div>
 
       {selectedDrug && (
         <div style={styles.drugContainer}>
-          
           <div style={styles.headerBlock}>
             <h1 style={styles.mainTitle}>{selectedDrug.brandName}</h1>
             <div style={styles.metaData}>
@@ -205,7 +232,6 @@ function DrugSearch() {
             </div>
           </div>
 
-          {/* RENAME: Updated button text */}
           <button onClick={() => addToCabinet(selectedDrug)} style={styles.addButton}>+ Save to List</button>
 
           <DrugSection id="overview" emoji="💊" title={`What is ${selectedDrug.brandName}?`} content={selectedDrug.purpose} />
@@ -219,6 +245,9 @@ function DrugSearch() {
             </div>
           )}
           <DrugSection id="interactions" emoji="⚡" title="Interactions" content={selectedDrug.interactions} />
+          {selectedDrug.storage && (
+             <DrugSection id="storage" emoji="🌡️" title="Storage" content={selectedDrug.storage} />
+          )}
         </div>
       )}
     </div>
@@ -233,6 +262,7 @@ const styles = {
   dropdown: { position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #ccc', zIndex: 1000, listStyle: 'none', padding: 0, margin: 0 },
   dropdownItem: { padding: '10px', borderBottom: '1px solid #eee', cursor: 'pointer' },
   error: { marginTop: '10px', color: 'red' },
+  devLink: { background: 'none', border: 'none', color: '#999', fontSize: '0.85rem', cursor: 'pointer', textDecoration: 'underline' },
   headerBlock: { borderBottom: '1px solid #ddd', paddingBottom: '20px', marginBottom: '30px' },
   mainTitle: { fontFamily: 'Georgia, serif', fontSize: '2.5rem', margin: '0 0 10px 0', color: '#000' },
   metaData: { fontSize: '0.95rem', lineHeight: '1.6', color: '#333', marginBottom: '20px' },
