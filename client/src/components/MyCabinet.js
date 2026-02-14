@@ -8,26 +8,47 @@ function MyCabinet() {
   const [selectedDrug, setSelectedDrug] = useState(null);
   const navigate = useNavigate();
 
+  // ✅ AUTH TOKEN: Get token from localStorage
+  const token = localStorage.getItem('token');
+  const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+
   const fetchCabinet = async () => {
+    // Redirect to signin if no token exists
+    if (!token) {
+      alert("Please sign in to view your saved medicines.");
+      navigate('/signin');
+      return;
+    }
+
     try {
-      const res = await axios.get('https://caresync-project-production-fff5.up.railway.app/api/user/medicines'); 
+      // ✅ FIXED: Using dynamic URL and sending Auth Headers
+      const res = await axios.get(`${API_BASE_URL}/api/user/medicines`, {
+        headers: { Authorization: token } 
+      }); 
       setMedicines(res.data);
     } catch (error) {
       console.error("Error fetching cabinet:", error);
+      if (error.response?.status === 401) {
+          alert("Session expired. Please sign in again.");
+          navigate('/signin');
+      }
     }
     setLoading(false);
   };
 
   useEffect(() => {
     fetchCabinet();
-  }, []);
+  }, [token]);
 
   const handleDelete = async (id, name, e) => {
     e.stopPropagation(); 
     if (!window.confirm(`Are you sure you want to remove ${name}?`)) return;
 
     try {
-      await axios.delete(`https://caresync-project-production-fff5.up.railway.app/api/user/remove/${id}`);
+      // ✅ FIXED: Dynamic URL + Auth Headers
+      await axios.delete(`${API_BASE_URL}/api/user/remove/${id}`, {
+        headers: { Authorization: token }
+      });
       setMedicines(medicines.filter(med => med._id !== id));
     } catch (error) {
       alert("Error removing item.");
@@ -35,7 +56,7 @@ function MyCabinet() {
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return "";
+    if (!dateString) return "Recently";
     return new Date(dateString).toLocaleDateString('en-SG', {
       day: 'numeric', month: 'short', year: 'numeric'
     });
@@ -43,7 +64,6 @@ function MyCabinet() {
 
   return (
     <div style={styles.container}>
-      {/* MODERN BACK BUTTON */}
       <button onClick={() => navigate('/')} style={styles.backButton}>
         ← Back to Home
       </button>
@@ -54,7 +74,7 @@ function MyCabinet() {
       </div>
 
       {loading ? (
-        <p>Loading...</p>
+        <p style={{textAlign:'center', marginTop:'50px'}}>Loading your cabinet...</p>
       ) : medicines.length === 0 ? (
         <div style={styles.emptyState}>
           <h3>Your saved list is empty.</h3>
@@ -105,15 +125,15 @@ function MyCabinet() {
               {selectedDrug.details ? (
                 <>
                   <Section title="Purpose" content={selectedDrug.details.purpose} />
-                  <Section title="How to Take" content={selectedDrug.details.dosage} />
+                  <Section title="How to Take" content={selectedDrug.details.usage || selectedDrug.details.dosage} />
                   <Section title="Side Effects" content={selectedDrug.details.side_effects} />
                   <Section title="Warnings" content={selectedDrug.details.warnings} warning />
                   <Section title="Interactions" content={selectedDrug.details.interactions} />
+                  <Section title="Storage" content={selectedDrug.details.storage} />
                 </>
               ) : (
                 <p style={{color: '#666', fontStyle: 'italic'}}>
                   Detailed information is missing for this saved item. 
-                  Please delete it and re-add it from the Search page to update the data.
                 </p>
               )}
             </div>
@@ -124,30 +144,28 @@ function MyCabinet() {
   );
 }
 
-const Section = ({ title, content, warning }) => (
-  <div style={{...styles.section, ...(warning ? styles.warningSection : {})}}>
-    <h4 style={{...styles.sectionTitle, ...(warning ? styles.warningTitle : {})}}>{title}</h4>
-    {Array.isArray(content) ? (
-      <ul style={{marginTop:'5px', paddingLeft:'20px'}}>
-        {content.map((item, i) => <li key={i} style={{marginBottom:'5px'}}>{item}</li>)}
-      </ul>
-    ) : (
-      <p style={{marginTop:'5px'}}>{content || "No information available."}</p>
-    )}
-  </div>
-);
+const Section = ({ title, content, warning }) => {
+  if (!content) return null;
+  return (
+    <div style={{...styles.section, ...(warning ? styles.warningSection : {})}}>
+      <h4 style={{...styles.sectionTitle, ...(warning ? styles.warningTitle : {})}}>{title}</h4>
+      {Array.isArray(content) ? (
+        <ul style={{marginTop:'5px', paddingLeft:'20px'}}>
+          {content.map((item, i) => <li key={i} style={{marginBottom:'5px'}}>{item}</li>)}
+        </ul>
+      ) : (
+        <p style={{marginTop:'5px'}}>{content}</p>
+      )}
+    </div>
+  );
+};
 
 const styles = {
   container: { maxWidth: '1000px', margin: '40px auto', padding: '0 20px', fontFamily: 'Arial, sans-serif' },
-  backButton: { 
-    background: 'none', border: 'none', color: '#666', 
-    fontSize: '0.95rem', cursor: 'pointer', marginBottom: '20px', 
-    padding: '8px 0', display: 'flex', alignItems: 'center', fontWeight: '500'
-  },
+  backButton: { background: 'none', border: 'none', color: '#666', fontSize: '0.95rem', cursor: 'pointer', marginBottom: '20px', padding: '8px 0', display: 'flex', alignItems: 'center', fontWeight: '500' },
   headerBlock: { borderBottom: '2px solid #eee', paddingBottom: '15px', marginBottom: '30px' },
   header: { color: '#104c97', margin: '0 0 10px 0' },
   subHeader: { color: '#666', margin: 0 },
-  
   emptyState: { textAlign: 'center', padding: '50px', backgroundColor: '#f9f9f9', borderRadius: '8px' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px' },
   card: { backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', border: '1px solid #eee', position: 'relative', display: 'flex', flexDirection: 'column' },
@@ -156,7 +174,7 @@ const styles = {
   genericName: { margin: '0 0 15px 0', color: '#777', fontSize: '0.9rem', fontStyle: 'italic' },
   timestamp: { fontSize: '0.8rem', color: '#aaa', marginBottom: '15px', marginTop: 'auto' },
   deleteBtn: { background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#ccc', padding: '0 5px' },
-  viewBtn: { width: '100%', padding: '10px', backgroundColor: '#eef3fc', color: '#1e5bbd', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', transition: 'background 0.2s' },
+  viewBtn: { width: '100%', padding: '10px', backgroundColor: '#eef3fc', color: '#1e5bbd', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
   modalContent: { backgroundColor: 'white', width: '90%', maxWidth: '600px', maxHeight: '85vh', borderRadius: '12px', padding: '30px', position: 'relative', display: 'flex', flexDirection: 'column' },
   closeModalBtn: { position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', fontSize: '2rem', cursor: 'pointer', color: '#666' },

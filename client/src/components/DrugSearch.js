@@ -15,6 +15,10 @@ function DrugSearch() {
   const [showDropdown, setShowDropdown] = useState(false);
   const wrapperRef = useRef(null); 
 
+  // ✅ 1. DYNAMIC URL & AUTH TOKEN
+  const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+  const token = localStorage.getItem('token');
+
   // --- SYNC URL & STATE ---
   useEffect(() => {
     if (urlQuery) {
@@ -58,7 +62,8 @@ function DrugSearch() {
     setShowDropdown(false);
 
     try {
-      const res = await axios.get(`http://localhost:5000/api/fda/search?query=${searchTerm}`);
+      // ✅ FIXED: Uses dynamic API URL
+      const res = await axios.get(`${API_BASE_URL}/api/fda/search?query=${searchTerm}`);
       if (res.data && res.data.length > 0) {
         setSelectedDrug(res.data[0]);
       } else { 
@@ -82,11 +87,21 @@ function DrugSearch() {
   };
 
   const addToCabinet = async (drug) => {
+    // ✅ FIXED: Check if user is logged in first
+    if (!token) {
+        alert("Please sign in to save medicines.");
+        navigate('/signin');
+        return;
+    }
+
     try {
-      await axios.post('http://localhost:5000/api/user/add', {
+      // ✅ FIXED: Uses Dynamic URL + Sends Auth Token
+      await axios.post(`${API_BASE_URL}/api/user/add`, {
         brandName: drug.brandName,
         genericName: drug.genericName,
         details: drug 
+      }, {
+        headers: { Authorization: token } // Critical for saving to the correct user
       });
       alert(`Success! ${drug.brandName} added to your Saved Medicines.`);
     } catch (err) { 
@@ -99,7 +114,7 @@ function DrugSearch() {
   const handleClearCache = async () => {
     if (!window.confirm("⚠️ Clear AI Cache?")) return;
     try {
-        await axios.post('http://localhost:5000/api/fda/clear-cache');
+        await axios.post(`${API_BASE_URL}/api/fda/clear-cache`);
         alert("Cache Cleared! Resetting...");
         window.location.href = window.location.origin; 
     } catch (err) {
@@ -107,7 +122,7 @@ function DrugSearch() {
     }
   };
 
-  // --- ✅ FIXED: CRASH PROOF FORMATTER ---
+  // --- CRASH PROOF FORMATTER ---
   const formatContent = (content) => {
     if (!content) return "Information not available.";
 
