@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import React, { useState, useRef } from 'react';
 import './App.css';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 
@@ -11,26 +10,16 @@ import DrugBrowse from './components/DrugBrowse';
 import Auth from './components/Auth'; 
 
 function App() {
-  const [medicines, setMedicines] = useState([]);
+  // ✅ Removed unused 'medicines' state
   const [refreshKey, setRefreshKey] = useState(0); 
   const browseRef = useRef(null);
   const navigate = useNavigate();
 
+  // AUTH STATE
   const isLoggedIn = !!localStorage.getItem('token');
   const username = localStorage.getItem('username');
 
-  useEffect(() => {
-    const fetchMedicines = async () => {
-      try {
-        // ✅ FIXED: Changed port from 5001 to 5000 to match index.js
-        const res = await axios.get('http://localhost:5000/api/medicines');
-        setMedicines(res.data);
-      } catch (error) { 
-        console.error("Error fetching initial data:", error); 
-      }
-    };
-    fetchMedicines();
-  }, []);
+  // ✅ Removed unused 'useEffect' for fetching medicines
 
   const handleLogoClick = (e) => {
     e.preventDefault();
@@ -61,6 +50,7 @@ function App() {
 
   return (
     <div className="App">
+      
       <header>
         <div className="header-top">
           <a href="/" className="logo-container" onClick={handleLogoClick}>
