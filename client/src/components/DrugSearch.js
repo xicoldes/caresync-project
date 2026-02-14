@@ -29,6 +29,7 @@ function DrugSearch() {
       setSelectedDrug(null);
       setError('');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlQuery]);
 
   useEffect(() => {

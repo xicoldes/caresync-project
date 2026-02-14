@@ -38,6 +38,7 @@ function MyCabinet() {
 
   useEffect(() => {
     fetchCabinet();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const handleDelete = async (id, name, e) => {
